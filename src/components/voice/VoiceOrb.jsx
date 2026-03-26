@@ -47,30 +47,43 @@ export default function VoiceOrb({ onTranscript, onResponse, onSources, conversa
     ]
 
     let fullResponse = ''
-    let sources = []
 
-    for await (const event of streamChat(messages)) {
-      if (event.type === 'sources') {
-        sources = event.data
-        onSources?.(sources)
-      } else if (event.type === 'token') {
-        fullResponse += event.data
-        onResponse?.(fullResponse, false)
-      } else if (event.type === 'done') {
-        onResponse?.(fullResponse, true)
-        // Speak first ~400 chars for responsiveness
-        const speakText = fullResponse.slice(0, 400)
-        setOrbState('speaking')
-        try {
-          const b64 = await synthesizeVoice(speakText, 'oriel')
-          await playAudioB64(b64)
-        } catch (e) {
-          console.warn('TTS failed:', e)
+    try {
+      for await (const event of streamChat(messages)) {
+        if (event.type === 'sources') {
+          onSources?.(event.data)
+        } else if (event.type === 'token') {
+          fullResponse += event.data
+          onResponse?.(fullResponse, false)
+        } else if (event.type === 'done') {
+          onResponse?.(fullResponse, true)
+          break
         }
-        setOrbState('idle')
-        setTranscript('')
       }
+    } catch (err) {
+      console.error('Brain stream error:', err)
+      onResponse?.(`[Brain connection error: ${err.message}]`, true)
+      setOrbState('idle')
+      setTranscript('')
+      return
     }
+
+    if (!fullResponse) {
+      setOrbState('idle')
+      setTranscript('')
+      return
+    }
+
+    // Speak first ~400 chars for responsiveness
+    setOrbState('speaking')
+    try {
+      const b64 = await synthesizeVoice(fullResponse.slice(0, 400), 'oriel')
+      await playAudioB64(b64)
+    } catch (e) {
+      console.warn('TTS failed:', e)
+    }
+    setOrbState('idle')
+    setTranscript('')
   }
 
   const toggleListen = () => {

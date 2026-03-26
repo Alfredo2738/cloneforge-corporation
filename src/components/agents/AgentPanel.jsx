@@ -1,7 +1,31 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, Zap, Brain, Skull, X, ArrowRight, MessageSquare } from 'lucide-react'
-import { spawnAgent, terminateAgent, streamAgentMessage, streamAgentToAgent } from '../../api/brain'
+import { spawnAgent, terminateAgent, streamAgentMessage, streamAgentToAgent, synthesizeVoice, playAudioB64 } from '../../api/brain'
+
+// Map agent specialty/type to ElevenLabs voice keys
+const AGENT_VOICE = {
+  // By specialty
+  medical:      'subagent',    // Marcus
+  cardiology:   'cardiology',  // Daniel
+  internal:     'internal',    // Callum
+  psychiatry:   'psychiatry',  // Charlotte
+  pulmonology:  'pulmonology', // Chris
+  research:     'paul',        // Paul — news/research cadence
+  financial:    'bill',        // Bill — gravitas
+  technical:    'adam',        // Adam
+  legal:        'dorothy',     // Dorothy — British formal
+  narrative:    'matilda',     // Matilda — storyteller
+  // By type (fallback)
+  subagent:     'subagent',    // Marcus
+  microagent:   'microagent',  // Eric — crisp
+  rogue:        'rogue',       // Will — unpredictable
+  master:       'oriel',       // Brian
+}
+
+function getAgentVoice(type, specialty) {
+  return AGENT_VOICE[specialty] || AGENT_VOICE[type] || 'subagent'
+}
 
 const AGENT_COLORS = {
   master:    { bg: 'from-blue-900 to-blue-800',   border: 'border-blue-500',   icon: '🧠' },
@@ -27,7 +51,13 @@ export default function AgentPanel({ onAgentMessage }) {
   const [spawnForm, setSpawnForm] = useState({ name: '', type: 'subagent', specialty: 'medical' })
 
   const handleSpawn = async () => {
-    const agent = await spawnAgent(spawnForm.name, spawnForm.type, spawnForm.specialty)
+    const data = await spawnAgent(spawnForm.name, spawnForm.type, spawnForm.specialty)
+    // normalize: backend returns agent_id, frontend uses agent.id
+    const agent = {
+      ...data,
+      id: data.agent_id || data.id,
+      voiceKey: getAgentVoice(spawnForm.type, spawnForm.specialty),
+    }
     setAgents(prev => [...prev, { ...agent, messages: [] }])
     setShowSpawn(false)
     setSpawnForm({ name: '', type: 'subagent', specialty: 'medical' })
@@ -39,17 +69,33 @@ export default function AgentPanel({ onAgentMessage }) {
   }
 
   const handleMessage = async (agentId, message) => {
+    const agent = agents.find(a => a.id === agentId)
     setAgents(prev => prev.map(a => a.id === agentId ? { ...a, status: 'thinking' } : a))
     let full = ''
-    for await (const event of streamAgentMessage(agentId, message)) {
-      if (event.type === 'token') {
-        full += event.data
-        setStreaming(prev => ({ ...prev, [agentId]: full }))
-      } else if (event.type === 'done') {
-        onAgentMessage?.({ agentId, message: full })
-        setAgents(prev => prev.map(a => a.id === agentId ? { ...a, status: 'idle' } : a))
-        setStreaming(prev => { const n = { ...prev }; delete n[agentId]; return n })
+    try {
+      for await (const event of streamAgentMessage(agentId, message)) {
+        if (event.type === 'token') {
+          full += event.data
+          setStreaming(prev => ({ ...prev, [agentId]: full }))
+        } else if (event.type === 'done') {
+          onAgentMessage?.({ agentId, message: full })
+          setAgents(prev => prev.map(a => a.id === agentId ? { ...a, status: 'idle' } : a))
+          setStreaming(prev => { const n = { ...prev }; delete n[agentId]; return n })
+          // Speak with agent's unique voice (first 300 chars)
+          if (full && agent?.voiceKey) {
+            try {
+              const b64 = await synthesizeVoice(full.slice(0, 300), agent.voiceKey)
+              playAudioB64(b64)
+            } catch (e) {
+              console.warn('Agent TTS failed:', e)
+            }
+          }
+        }
       }
+    } catch (err) {
+      console.error('Agent stream error:', err)
+      setStreaming(prev => ({ ...prev, [agentId]: `[Error: ${err.message}]` }))
+      setAgents(prev => prev.map(a => a.id === agentId ? { ...a, status: 'idle' } : a))
     }
   }
 
@@ -151,7 +197,7 @@ export default function AgentPanel({ onAgentMessage }) {
                     <span className="text-lg">{style.icon}</span>
                     <div>
                       <p className="text-sm font-medium text-slate-200">{agent.name}</p>
-                      <p className="text-xs text-slate-400 capitalize">{agent.type} · {agent.specialty}</p>
+                      <p className="text-xs text-slate-400 capitalize">{agent.type} · {agent.specialty} · <span className="text-blue-400/70">🔊 {agent.voiceKey}</span></p>
                     </div>
                     <span className={`w-2 h-2 rounded-full ml-1 ${STATUS_DOT[agent.status] || 'bg-slate-500'}`} />
                   </div>

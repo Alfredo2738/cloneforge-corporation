@@ -70,7 +70,7 @@ export default function BrainInterface() {
   }
 
   return (
-    <div className="min-h-screen bg-[#050c18] text-slate-200 flex flex-col">
+    <div className="h-screen bg-[#050c18] text-slate-200 flex flex-col overflow-hidden">
       {/* Header */}
       <header className="border-b border-slate-800/60 px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -92,12 +92,35 @@ export default function BrainInterface() {
           {/* Voice orb */}
           <div className="flex justify-center py-8 border-b border-slate-800/40">
             <VoiceOrb
-              onTranscript={(t) => handleSend(t)}
-              onResponse={(text, done) => {
-                if (!done) return
-                // VoiceOrb handles its own streaming display via handleSend
+              onTranscript={(t) => {
+                // Mirror voice input into chat — VoiceOrb owns the brain call
+                setConversation(prev => [...prev, { role: 'user', content: t }])
+                setDisplayMessages(prev => [
+                  ...prev,
+                  { role: 'user', content: t },
+                  { role: 'assistant', content: '', sources: [] },
+                ])
+                setIsStreaming(true)
               }}
-              onSources={setSources}
+              onResponse={(text, done) => {
+                setDisplayMessages(prev => {
+                  const msgs = [...prev]
+                  msgs[msgs.length - 1] = { role: 'assistant', content: text, sources: msgs[msgs.length - 1]?.sources || [] }
+                  return msgs
+                })
+                if (done) {
+                  setConversation(prev => [...prev, { role: 'assistant', content: text }])
+                  setIsStreaming(false)
+                }
+              }}
+              onSources={(srcs) => {
+                setSources(srcs)
+                setDisplayMessages(prev => {
+                  const msgs = [...prev]
+                  msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], sources: srcs }
+                  return msgs
+                })
+              }}
               conversationHistory={conversation}
             />
           </div>

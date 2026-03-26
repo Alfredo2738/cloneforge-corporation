@@ -4,6 +4,7 @@ const BRAIN_KEY = import.meta.env.VITE_BRAIN_API_KEY || ''
 const headers = () => ({
   'Content-Type': 'application/json',
   'X-Brain-Key': BRAIN_KEY,
+  'ngrok-skip-browser-warning': 'true',
 })
 
 // ── Chat ──────────────────────────────────────────────────────────────────────
