@@ -21,10 +21,11 @@ export default function BrainInterface() {
   const [urlInput, setUrlInput]     = useState('')
   const [ingestStatus, setIngestStatus] = useState('')
   const [activeAgent, setActiveAgent]   = useState(null)  // { id, name, voiceKey, type }
-  const chatEndRef = useRef(null)
+  const chatContainerRef = useRef(null)
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const el = chatContainerRef.current
+    if (el) el.scrollTop = el.scrollHeight
   }, [displayMessages])
 
   // ── Text send to Oriel ────────────────────────────────────────────────────
@@ -186,7 +187,7 @@ export default function BrainInterface() {
           </div>
 
           {/* Chat transcript */}
-          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+          <div ref={chatContainerRef} className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
             <AnimatePresence initial={false}>
               {displayMessages.map((msg, i) => (
                 <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
@@ -215,7 +216,6 @@ export default function BrainInterface() {
                 </motion.div>
               ))}
             </AnimatePresence>
-            <div ref={chatEndRef} />
           </div>
 
           {/* Text input */}
