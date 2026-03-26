@@ -108,11 +108,11 @@ export async function terminateAgent(agentId) {
 
 // ── Voice ─────────────────────────────────────────────────────────────────────
 
-export async function synthesizeVoice(text, voiceKey = 'oriel') {
+export async function synthesizeVoice(text, voiceKey = 'oriel', languageCode = null) {
   const res = await fetch(`${BRAIN_URL}/voice/synthesize`, {
     method: 'POST',
     headers: headers(),
-    body: JSON.stringify({ text, voice_key: voiceKey, format: 'b64' }),
+    body: JSON.stringify({ text, voice_key: voiceKey, format: 'b64', language_code: languageCode }),
   })
   const data = await res.json()
   return data.audio_b64
