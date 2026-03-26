@@ -118,9 +118,36 @@ export async function synthesizeVoice(text, voiceKey = 'oriel') {
   return data.audio_b64
 }
 
-export function playAudioB64(b64) {
-  const audio = new Audio(`data:audio/mpeg;base64,${b64}`)
-  return audio.play()
+// Shared AudioContext — keeps browser autoplay permission alive across agent turns
+let _audioCtx = null
+function getAudioContext() {
+  if (!_audioCtx || _audioCtx.state === 'closed') {
+    _audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+  }
+  return _audioCtx
+}
+
+export async function playAudioB64(b64) {
+  try {
+    const ctx = getAudioContext()
+    if (ctx.state === 'suspended') await ctx.resume()
+
+    const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0))
+    const buffer = await ctx.decodeAudioData(bytes.buffer)
+    const source = ctx.createBufferSource()
+    source.buffer = buffer
+    source.connect(ctx.destination)
+
+    return new Promise((resolve) => {
+      source.onended = resolve
+      source.start(0)
+    })
+  } catch (err) {
+    // Fallback to HTML Audio element
+    console.warn('AudioContext playback failed, falling back:', err)
+    const audio = new Audio(`data:audio/mpeg;base64,${b64}`)
+    return audio.play().catch(() => {})
+  }
 }
 
 // ── Ingest ────────────────────────────────────────────────────────────────────
