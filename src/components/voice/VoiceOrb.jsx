@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Mic, MicOff, Volume2 } from 'lucide-react'
+import { Mic, MicOff, Volume2, Radio } from 'lucide-react'
 import { streamChat, synthesizeVoice, playAudioB64 } from '../../api/brain'
 
 const PULSE_VARIANTS = {
@@ -11,10 +11,25 @@ const PULSE_VARIANTS = {
 }
 
 export default function VoiceOrb({ onTranscript, onResponse, onSources, conversationHistory }) {
-  const [orbState, setOrbState] = useState('idle')   // idle | listening | thinking | speaking
-  const [transcript, setTranscript] = useState('')
-  const recognitionRef = useRef(null)
-  const audioRef = useRef(null)
+  const [orbState, setOrbState]       = useState('idle')
+  const [continuous, setContinuous]   = useState(false)  // always-on mode
+  const [transcript, setTranscript]   = useState('')
+  const recognitionRef  = useRef(null)
+  const orbStateRef     = useRef('idle')
+  const continuousRef   = useRef(false)
+
+  // Keep refs in sync so closures see latest values
+  useEffect(() => { orbStateRef.current = orbState }, [orbState])
+  useEffect(() => { continuousRef.current = continuous }, [continuous])
+
+  const startListening = useCallback(() => {
+    if (!recognitionRef.current) return
+    try {
+      recognitionRef.current.start()
+      setOrbState('listening')
+      setTranscript('')
+    } catch {}
+  }, [])
 
   useEffect(() => {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) return
@@ -25,16 +40,18 @@ export default function VoiceOrb({ onTranscript, onResponse, onSources, conversa
     rec.lang = 'en-US'
 
     rec.onresult = (e) => {
-      const text = Array.from(e.results)
-        .map(r => r[0].transcript).join('')
+      const text = Array.from(e.results).map(r => r[0].transcript).join('')
       setTranscript(text)
       if (e.results[0].isFinal) handleFinalTranscript(text)
     }
+
     rec.onend = () => {
-      if (orbState === 'listening') setOrbState('idle')
+      // If still in listening state (no speech detected), reset to idle
+      if (orbStateRef.current === 'listening') setOrbState('idle')
     }
+
     recognitionRef.current = rec
-  }, [])
+  }, []) // eslint-disable-line
 
   const handleFinalTranscript = async (text) => {
     if (!text.trim()) return
@@ -65,16 +82,19 @@ export default function VoiceOrb({ onTranscript, onResponse, onSources, conversa
       onResponse?.(`[Brain connection error: ${err.message}]`, true)
       setOrbState('idle')
       setTranscript('')
+      // Re-engage listening in continuous mode even after error
+      if (continuousRef.current) setTimeout(() => startListening(), 1500)
       return
     }
 
     if (!fullResponse) {
       setOrbState('idle')
       setTranscript('')
+      if (continuousRef.current) setTimeout(() => startListening(), 800)
       return
     }
 
-    // Speak first ~400 chars for responsiveness
+    // Speak the response
     setOrbState('speaking')
     try {
       const b64 = await synthesizeVoice(fullResponse.slice(0, 400), 'oriel')
@@ -82,8 +102,14 @@ export default function VoiceOrb({ onTranscript, onResponse, onSources, conversa
     } catch (e) {
       console.warn('TTS failed:', e)
     }
+
     setOrbState('idle')
     setTranscript('')
+
+    // Auto-resume listening after speaking in continuous mode
+    if (continuousRef.current) {
+      setTimeout(() => startListening(), 600)
+    }
   }
 
   const toggleListen = () => {
@@ -91,9 +117,18 @@ export default function VoiceOrb({ onTranscript, onResponse, onSources, conversa
       recognitionRef.current?.stop()
       setOrbState('idle')
     } else if (orbState === 'idle') {
-      recognitionRef.current?.start()
-      setOrbState('listening')
-      setTranscript('')
+      startListening()
+    }
+  }
+
+  const toggleContinuous = () => {
+    const next = !continuous
+    setContinuous(next)
+    if (next && orbState === 'idle') {
+      startListening()
+    } else if (!next && orbState === 'listening') {
+      recognitionRef.current?.stop()
+      setOrbState('idle')
     }
   }
 
@@ -106,7 +141,7 @@ export default function VoiceOrb({ onTranscript, onResponse, onSources, conversa
   const [c1, c2] = stateColors[orbState]
 
   return (
-    <div className="flex flex-col items-center gap-4">
+    <div className="flex flex-col items-center gap-3">
       {/* Outer glow rings */}
       <div className="relative flex items-center justify-center">
         {['speaking', 'listening'].includes(orbState) && (
@@ -124,6 +159,16 @@ export default function VoiceOrb({ onTranscript, onResponse, onSources, conversa
               style={{ width: 200, height: 200 }}
             />
           </>
+        )}
+
+        {/* Continuous mode outer ring */}
+        {continuous && orbState === 'idle' && (
+          <motion.div
+            className="absolute rounded-full border border-cyan-400/30"
+            animate={{ scale: [1, 1.2, 1], opacity: [0.4, 0.1, 0.4] }}
+            transition={{ duration: 3, repeat: Infinity }}
+            style={{ width: 200, height: 200 }}
+          />
         )}
 
         {/* Core orb */}
@@ -183,12 +228,29 @@ export default function VoiceOrb({ onTranscript, onResponse, onSources, conversa
         )}
       </AnimatePresence>
 
-      {/* State label */}
-      <p className="text-xs text-slate-500 tracking-widest uppercase">
-        {orbState === 'idle' ? 'Tap to speak' :
-         orbState === 'listening' ? 'Listening…' :
-         orbState === 'thinking' ? 'Oriel is thinking…' : 'Speaking…'}
-      </p>
+      {/* State label + continuous toggle */}
+      <div className="flex items-center gap-3">
+        <p className="text-xs text-slate-500 tracking-widest uppercase">
+          {orbState === 'idle' && !continuous ? 'Tap to speak' :
+           orbState === 'idle' && continuous  ? 'Waiting…' :
+           orbState === 'listening'            ? 'Listening…' :
+           orbState === 'thinking'             ? 'Thinking…' : 'Speaking…'}
+        </p>
+
+        {/* Always-on toggle */}
+        <button
+          onClick={toggleContinuous}
+          title={continuous ? 'Disable always-on mode' : 'Enable always-on listening'}
+          className={`flex items-center gap-1 px-2 py-1 rounded-lg border text-[10px] transition-colors ${
+            continuous
+              ? 'border-cyan-500/50 bg-cyan-500/10 text-cyan-400'
+              : 'border-slate-700/50 text-slate-600 hover:border-slate-500 hover:text-slate-400'
+          }`}
+        >
+          <Radio size={10} />
+          {continuous ? 'LIVE' : 'LIVE'}
+        </button>
+      </div>
     </div>
   )
 }
