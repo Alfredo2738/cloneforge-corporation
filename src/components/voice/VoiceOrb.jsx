@@ -17,6 +17,8 @@ export default function VoiceOrb({ onTranscript, onResponse, onSources, conversa
   const recognitionRef  = useRef(null)
   const orbStateRef     = useRef('idle')
   const continuousRef   = useRef(false)
+  const finalTimerRef   = useRef(null)   // debounce for final result
+  const lastFinalRef    = useRef('')     // dedupe identical results
 
   // Keep refs in sync so closures see latest values
   useEffect(() => { orbStateRef.current = orbState }, [orbState])
@@ -40,12 +42,25 @@ export default function VoiceOrb({ onTranscript, onResponse, onSources, conversa
     rec.lang = 'en-US'
 
     rec.onresult = (e) => {
-      const text = Array.from(e.results).map(r => r[0].transcript).join('')
+      const text = Array.from(e.results).map(r => r[0].transcript).join('').trim()
       setTranscript(text)
-      if (e.results[0].isFinal) handleFinalTranscript(text)
+
+      if (e.results[e.results.length - 1].isFinal) {
+        // Debounce: wait 400ms for any follow-on words before committing
+        clearTimeout(finalTimerRef.current)
+        finalTimerRef.current = setTimeout(() => {
+          const words = text.split(/\s+/).filter(Boolean)
+          // Require at least 2 words and not a repeat of the last utterance
+          if (words.length >= 2 && text !== lastFinalRef.current) {
+            lastFinalRef.current = text
+            handleFinalTranscript(text)
+          }
+        }, 400)
+      }
     }
 
     rec.onend = () => {
+      clearTimeout(finalTimerRef.current)
       // If still in listening state (no speech detected), reset to idle
       if (orbStateRef.current === 'listening') setOrbState('idle')
     }
