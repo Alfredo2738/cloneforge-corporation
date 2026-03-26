@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, Zap, Brain, Skull, X, ArrowRight, MessageSquare } from 'lucide-react'
+import { Plus, X, ArrowRight, MessageSquare, Mic, MicOff } from 'lucide-react'
 import { spawnAgent, terminateAgent, streamAgentMessage, streamAgentToAgent, synthesizeVoice, playAudioB64 } from '../../api/brain'
 
 // Map agent specialty/type to ElevenLabs voice keys
@@ -43,10 +43,10 @@ const STATUS_DOT = {
   diverged:  'bg-red-400 animate-pulse',
 }
 
-export default function AgentPanel({ onAgentMessage }) {
+export default function AgentPanel({ onAgentMessage, activeAgentId, onActivateAgent, onDeactivateAgent }) {
   const [agents, setAgents] = useState([])
   const [streaming, setStreaming] = useState({})
-  const [a2aMode, setA2aMode] = useState(null)  // { fromId } | null
+  const [a2aMode, setA2aMode] = useState(null)
   const [showSpawn, setShowSpawn] = useState(false)
   const [spawnForm, setSpawnForm] = useState({ name: '', type: 'subagent', specialty: 'medical' })
 
@@ -78,7 +78,7 @@ export default function AgentPanel({ onAgentMessage }) {
           full += event.data
           setStreaming(prev => ({ ...prev, [agentId]: full }))
         } else if (event.type === 'done') {
-          onAgentMessage?.({ agentId, message: full })
+          onAgentMessage?.({ agentId, agentName: agent?.name, agentType: agent?.type, message: full })
           setAgents(prev => prev.map(a => a.id === agentId ? { ...a, status: 'idle' } : a))
           setStreaming(prev => { const n = { ...prev }; delete n[agentId]; return n })
           // Speak with agent's unique voice (first 300 chars)
@@ -189,7 +189,11 @@ export default function AgentPanel({ onAgentMessage }) {
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 20 }}
-                className={`rounded-xl border ${style.border}/30 bg-gradient-to-br ${style.bg} p-4 flex flex-col gap-3`}
+                className={`rounded-xl border ${
+                  activeAgentId === agent.id
+                    ? 'border-emerald-400/60 shadow-[0_0_12px_rgba(52,211,153,0.2)]'
+                    : `${style.border}/30`
+                } bg-gradient-to-br ${style.bg} p-4 flex flex-col gap-3 transition-all`}
               >
                 {/* Agent header */}
                 <div className="flex items-center justify-between">
@@ -202,6 +206,26 @@ export default function AgentPanel({ onAgentMessage }) {
                     <span className={`w-2 h-2 rounded-full ml-1 ${STATUS_DOT[agent.status] || 'bg-slate-500'}`} />
                   </div>
                   <div className="flex gap-1">
+                    {/* Converse button — routes orb voice to this agent */}
+                    {agent.status !== 'complete' && (
+                      <button
+                        onClick={() => {
+                          if (activeAgentId === agent.id) {
+                            onDeactivateAgent?.()
+                          } else {
+                            onActivateAgent?.({ id: agent.id, name: agent.name, voiceKey: agent.voiceKey, type: agent.type, specialty: agent.specialty })
+                          }
+                        }}
+                        title={activeAgentId === agent.id ? 'End conversation' : 'Talk to this agent'}
+                        className={`p-1.5 rounded-lg transition-colors ${
+                          activeAgentId === agent.id
+                            ? 'bg-emerald-500/20 border border-emerald-400/40 text-emerald-400'
+                            : 'hover:bg-white/10 text-slate-500 hover:text-emerald-400'
+                        }`}
+                      >
+                        {activeAgentId === agent.id ? <MicOff size={13} /> : <Mic size={13} />}
+                      </button>
+                    )}
                     {a2aMode?.fromId !== agent.id && (
                       <button
                         onClick={() => setA2aMode(a2aMode ? null : { fromId: agent.id })}
