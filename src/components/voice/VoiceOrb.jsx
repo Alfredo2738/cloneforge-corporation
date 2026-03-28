@@ -21,6 +21,12 @@ const LANGUAGES = [
   { flag: '🇧🇷', label: 'PT', recog: 'pt-BR', tts: 'pt' },
 ]
 
+// Strip the 〔EN〕 translation line — TTS only speaks the main response
+function extractVoiceText(fullText) {
+  const idx = fullText.indexOf('〔EN〕')
+  return idx !== -1 ? fullText.slice(0, idx).trim() : fullText.trim()
+}
+
 export default function VoiceOrb({
   onTranscript,
   onResponse,
@@ -28,36 +34,43 @@ export default function VoiceOrb({
   conversationHistory,
   activeAgent,
   onAgentResponse,
+  collections,
+  onOrbStateChange,
 }) {
-  const [orbState, setOrbState]           = useState('idle')
-  const [continuous, setContinuous]       = useState(false)
-  const [transcript, setTranscript]       = useState('')
-  const [lang, setLang]                   = useState(LANGUAGES[0])
-  const [showLangPicker, setShowLangPicker] = useState(false)
+  const [orbState, setOrbState]               = useState('idle')
+  const [continuous, setContinuous]           = useState(false)
+  const [transcript, setTranscript]           = useState('')
+  const [lang, setLang]                       = useState(LANGUAGES[0])
+  const [showLangPicker, setShowLangPicker]   = useState(false)
 
-  const recognitionRef     = useRef(null)
-  const orbStateRef        = useRef('idle')
-  const continuousRef      = useRef(false)
-  const finalTimerRef      = useRef(null)
-  const lastFinalRef       = useRef('')
-  const activeAgentRef     = useRef(null)
-  const langRef            = useRef(LANGUAGES[0])
-  const convHistoryRef     = useRef([])   // always-current conversation history
-  const pendingTextRef     = useRef('')   // text pending from onresult, flushed in onend
+  const recognitionRef   = useRef(null)
+  const orbStateRef      = useRef('idle')
+  const continuousRef    = useRef(false)
+  const silenceTimerRef  = useRef(null)   // replaces finalTimerRef — fires after 1400ms of no new speech
+  const lastFinalRef     = useRef('')
+  const activeAgentRef   = useRef(null)
+  const langRef          = useRef(LANGUAGES[0])
+  const convHistoryRef   = useRef([])
+  const accTextRef       = useRef('')     // accumulated transcript across continuous results
 
-  useEffect(() => { orbStateRef.current    = orbState          }, [orbState])
+  const _setOrbState = useCallback((s) => {
+    setOrbState(s)
+    orbStateRef.current = s
+    onOrbStateChange?.(s)
+  }, [onOrbStateChange])
+
   useEffect(() => { continuousRef.current  = continuous        }, [continuous])
   useEffect(() => { activeAgentRef.current = activeAgent       }, [activeAgent])
   useEffect(() => { langRef.current        = lang              }, [lang])
   useEffect(() => { convHistoryRef.current = conversationHistory ?? [] }, [conversationHistory])
 
-  // ── Core voice handler (stable ref — never stale) ─────────────────────────
+  // ── Core voice handler ────────────────────────────────────────────────────
   const handleFinalTranscript = useCallback(async (text) => {
     if (!text.trim()) return
     const agent   = activeAgentRef.current
     const curLang = langRef.current
 
-    setOrbState('thinking')
+    _setOrbState('thinking')
     onTranscript?.(text, agent?.id || null)
 
     let fullResponse = ''
@@ -76,7 +89,7 @@ export default function VoiceOrb({
         }
       } else {
         const messages = [...convHistoryRef.current, { role: 'user', content: text }]
-        for await (const event of streamChat(messages)) {
+        for await (const event of streamChat(messages, collections, curLang.tts)) {
           if (event.type === 'sources') {
             onSources?.(event.data)
           } else if (event.type === 'token') {
@@ -90,95 +103,120 @@ export default function VoiceOrb({
       }
     } catch (err) {
       console.error('Brain stream error:', err)
-      // Show a clean reconnecting message — never expose raw network errors in demo
       const msg = 'Oriel4o is reconnecting — please try again in a moment.'
       agent ? onAgentResponse?.(agent.id, msg, true) : onResponse?.(msg, true)
-      setOrbState('idle'); setTranscript('')
+      _setOrbState('idle'); setTranscript('')
       if (continuousRef.current) setTimeout(() => startListening(), 2500)
       return
     }
 
     if (!fullResponse) {
-      setOrbState('idle'); setTranscript('')
+      _setOrbState('idle'); setTranscript('')
       if (continuousRef.current) setTimeout(() => startListening(), 800)
       return
     }
 
-    // Speak
-    setOrbState('speaking')
+    // Speak only the main-language portion — never read the 〔EN〕 translation aloud
+    _setOrbState('speaking')
     try {
-      const b64 = await synthesizeVoice(fullResponse.slice(0, 400), voiceKey, curLang.tts)
+      const voiceText = extractVoiceText(fullResponse)
+      const b64 = await synthesizeVoice(voiceText.slice(0, 500), voiceKey, curLang.tts)
       await playAudioB64(b64)
     } catch (e) {
       console.warn('TTS failed:', e)
     }
 
-    setOrbState('idle'); setTranscript('')
+    _setOrbState('idle'); setTranscript('')
     if (continuousRef.current) setTimeout(() => startListening(), 700)
-  }, [onTranscript, onResponse, onSources, onAgentResponse]) // eslint-disable-line
+  }, [onTranscript, onResponse, onSources, onAgentResponse, collections, _setOrbState]) // eslint-disable-line
 
-  // Keep a stable ref to the handler so recognizer closures never go stale
   const handleFinalRef = useRef(handleFinalTranscript)
   useEffect(() => { handleFinalRef.current = handleFinalTranscript }, [handleFinalTranscript])
 
-  // ── Build / rebuild recognizer ────────────────────────────────────────────
+  // ── Build recognizer ──────────────────────────────────────────────────────
   const buildRecognizer = useCallback((langObj) => {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-      console.warn('SpeechRecognition not supported in this browser')
+      console.warn('SpeechRecognition not supported')
       return null
     }
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+    const SR  = window.SpeechRecognition || window.webkitSpeechRecognition
     const rec = new SR()
-    rec.continuous     = false
+
+    // continuous: true — we control when to stop via silence timer
+    rec.continuous     = true
     rec.interimResults = true
     rec.lang           = langObj.recog
 
     rec.onresult = (e) => {
+      // Accumulate all results (final + interim) into one string
       const text = Array.from(e.results).map(r => r[0].transcript).join('').trim()
       setTranscript(text)
+      accTextRef.current = text
 
-      if (e.results[e.results.length - 1].isFinal) {
-        const minWords = langObj.recog.startsWith('en') ? 2 : 1
-        const words = text.split(/\s+/).filter(Boolean)
-        if (words.length >= minWords) {
-          pendingTextRef.current = text  // stash for onend to flush
-        }
+      // Reset silence timer on every new speech event
+      clearTimeout(silenceTimerRef.current)
+
+      const words = text.split(/\s+/).filter(Boolean)
+      // Require at least 3 words before we even consider firing
+      if (words.length >= 3) {
+        // 1400ms of silence = user has finished speaking
+        silenceTimerRef.current = setTimeout(() => {
+          const t = accTextRef.current
+          if (t && t !== lastFinalRef.current) {
+            lastFinalRef.current = t
+            accTextRef.current   = ''
+            try { rec.stop() } catch {}
+          }
+        }, 1400)
       }
     }
 
-    // FIX: onend flushes the pending transcript — do NOT clear the timer here.
-    // Previously onend called clearTimeout which killed the transcript before it fired.
     rec.onend = () => {
-      const pending = pendingTextRef.current
-      pendingTextRef.current = ''
+      // If we stopped because of silence timer, the text is in lastFinalRef
+      const t = lastFinalRef.current
+      // Only fire if the text hasn't already been sent
+      const pending = accTextRef.current
+      accTextRef.current = ''
+      clearTimeout(silenceTimerRef.current)
 
-      if (pending && pending !== lastFinalRef.current) {
+      const toProcess = pending || t
+      if (toProcess && toProcess === lastFinalRef.current) {
+        // text already set by silence timer path — fire it
+        handleFinalRef.current(toProcess)
+        lastFinalRef.current = ''
+      } else if (pending && pending !== lastFinalRef.current) {
         lastFinalRef.current = pending
         handleFinalRef.current(pending)
       } else if (orbStateRef.current === 'listening') {
-        setOrbState('idle')
+        _setOrbState('idle')
       }
     }
 
     rec.onerror = (e) => {
       console.warn('SpeechRecognition error:', e.error)
-      pendingTextRef.current = ''
-      if (orbStateRef.current === 'listening') setOrbState('idle')
+      clearTimeout(silenceTimerRef.current)
+      accTextRef.current = ''
+      if (orbStateRef.current === 'listening') _setOrbState('idle')
     }
 
     return rec
-  }, [])
+  }, [_setOrbState])
 
   // Initial build
   useEffect(() => {
     recognitionRef.current = buildRecognizer(LANGUAGES[0])
+    return () => {
+      clearTimeout(silenceTimerRef.current)
+      try { recognitionRef.current?.stop() } catch {}
+    }
   }, [buildRecognizer])
 
   // ── Language switch ───────────────────────────────────────────────────────
   const switchLanguage = useCallback((langObj) => {
     const wasListening = orbStateRef.current === 'listening'
+    clearTimeout(silenceTimerRef.current)
+    accTextRef.current = ''
     try { recognitionRef.current?.stop() } catch {}
-    pendingTextRef.current = ''
 
     setLang(langObj)
     setShowLangPicker(false)
@@ -188,24 +226,30 @@ export default function VoiceOrb({
 
     if (wasListening && rec) {
       setTimeout(() => {
-        try { rec.start(); setOrbState('listening'); setTranscript('') } catch {}
+        try { rec.start(); _setOrbState('listening'); setTranscript('') } catch {}
       }, 150)
     }
-  }, [buildRecognizer])
+  }, [buildRecognizer, _setOrbState])
 
   const startListening = useCallback(() => {
     if (!recognitionRef.current) return
-    pendingTextRef.current = ''
-    try { recognitionRef.current.start(); setOrbState('listening'); setTranscript('') } catch (e) {
+    accTextRef.current = ''
+    clearTimeout(silenceTimerRef.current)
+    try {
+      recognitionRef.current.start()
+      _setOrbState('listening')
+      setTranscript('')
+    } catch (e) {
       console.warn('startListening error:', e)
     }
-  }, [])
+  }, [_setOrbState])
 
   const toggleListen = () => {
     if (orbState === 'listening') {
-      pendingTextRef.current = ''
-      recognitionRef.current?.stop()
-      setOrbState('idle')
+      clearTimeout(silenceTimerRef.current)
+      accTextRef.current = ''
+      try { recognitionRef.current?.stop() } catch {}
+      _setOrbState('idle')
     } else if (orbState === 'idle') {
       startListening()
     }
@@ -216,9 +260,10 @@ export default function VoiceOrb({
     setContinuous(next)
     if (next && orbState === 'idle') startListening()
     else if (!next && orbState === 'listening') {
-      pendingTextRef.current = ''
-      recognitionRef.current?.stop()
-      setOrbState('idle')
+      clearTimeout(silenceTimerRef.current)
+      accTextRef.current = ''
+      try { recognitionRef.current?.stop() } catch {}
+      _setOrbState('idle')
     }
   }
 
@@ -231,6 +276,9 @@ export default function VoiceOrb({
     ? (orbState === 'idle' ? activeAgent.name.toUpperCase() : orbState === 'listening' ? 'LISTENING…' : orbState === 'thinking' ? 'THINKING…' : 'SPEAKING…')
     : (orbState === 'idle' && !continuous ? 'ORIEL' : orbState === 'idle' ? 'WAITING…' : orbState === 'listening' ? 'LISTENING…' : orbState === 'thinking' ? 'THINKING…' : 'SPEAKING…')
 
+  // Language indicator — show selected language when non-English
+  const showLangBadge = lang.tts !== 'en'
+
   return (
     <div className="flex flex-col items-center gap-3">
       {/* Active agent banner */}
@@ -241,6 +289,17 @@ export default function VoiceOrb({
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             In conversation with <strong>{activeAgent.name}</strong>
             <span className="text-emerald-600 ml-1">{lang.flag} {lang.label}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Language mode badge */}
+      <AnimatePresence>
+        {showLangBadge && (
+          <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-blue-500/30 bg-blue-900/20 text-[10px] text-blue-300">
+            <span>{lang.flag}</span>
+            <span>Oriel responds in <strong>{lang.label}</strong> + English translation</span>
           </motion.div>
         )}
       </AnimatePresence>

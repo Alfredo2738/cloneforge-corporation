@@ -35,11 +35,11 @@ async function resilientFetch(url, opts, { maxAttempts = 4, baseDelay = 800 } = 
 
 // ── Chat ──────────────────────────────────────────────────────────────────────
 
-export async function* streamChat(messages, collections = ['cloneforge_docs', 'cloneforge_web']) {
+export async function* streamChat(messages, collections = ['cloneforge_docs', 'cloneforge_medical_records', 'cloneforge_web'], language = 'en') {
   const res = await resilientFetch(`${BRAIN_URL}/chat/stream`, {
     method: 'POST',
     headers: headers(),
-    body: JSON.stringify({ messages, collections, stream: true }),
+    body: JSON.stringify({ messages, collections, stream: true, language }),
   })
 
   const reader = res.body.getReader()
@@ -196,5 +196,12 @@ export async function getIngestStatus() {
 
 export async function getBrainStatus() {
   const res = await fetch(`${BRAIN_URL}/status`)
+  return res.json()
+}
+
+// ── Forge Ledger ───────────────────────────────────────────────────────────────
+
+export async function getLedgerStats() {
+  const res = await fetch(`${BRAIN_URL}/ledger/stats`, { headers: headers() })
   return res.json()
 }

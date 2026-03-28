@@ -4,7 +4,16 @@ import { Activity, Globe, Zap, ChevronDown, ChevronUp, Send, X } from 'lucide-re
 import VoiceOrb from '../components/voice/VoiceOrb'
 import AgentPanel from '../components/agents/AgentPanel'
 import BrainDash from '../components/plots/BrainDash'
+import StackFlowDiagram from '../components/plots/StackFlowDiagram'
 import { streamChat, ingestUrls } from '../api/brain'
+
+const ALL_COLLECTIONS = ['cloneforge_docs', 'cloneforge_medical_records', 'cloneforge_web']
+
+const MESH_SEED_URLS = [
+  'https://cloneforge.io',
+  'https://cloneforge.io/clonepharma_sales',
+  'https://cloneforge-corporation.ai',
+]
 
 const WELCOME = `I am Oriel4o — the master intelligence of CloneForge Corporation. I operate across your entire knowledge mesh: clinical documentation, research literature, indexed web intelligence, and live agent networks. Speak or type. I'm listening.`
 
@@ -21,12 +30,18 @@ export default function BrainInterface() {
   const [urlInput, setUrlInput]     = useState('')
   const [ingestStatus, setIngestStatus] = useState('')
   const [activeAgent, setActiveAgent]   = useState(null)  // { id, name, voiceKey, type }
+  const [orbState, setOrbState]         = useState('idle')
   const chatContainerRef = useRef(null)
 
   useEffect(() => {
     const el = chatContainerRef.current
     if (el) el.scrollTop = el.scrollHeight
   }, [displayMessages])
+
+  // Seed mesh with clinical + pharma URLs once on mount (background, silent)
+  useEffect(() => {
+    ingestUrls(MESH_SEED_URLS, true).catch(() => {})
+  }, [])
 
   // ── Text send to Oriel ────────────────────────────────────────────────────
   const handleSend = async (text) => {
@@ -45,7 +60,7 @@ export default function BrainInterface() {
 
     let assistantMsg = { role: 'assistant', content: '', sources: [], speaker: 'ORIEL4O' }
 
-    for await (const event of streamChat(newConversation)) {
+    for await (const event of streamChat(newConversation, ALL_COLLECTIONS)) {
       if (event.type === 'sources') {
         setSources(event.data)
         assistantMsg = { ...assistantMsg, sources: event.data }
@@ -196,6 +211,8 @@ export default function BrainInterface() {
               conversationHistory={conversation}
               activeAgent={activeAgent}
               onAgentResponse={handleAgentVoiceResponse}
+              collections={ALL_COLLECTIONS}
+              onOrbStateChange={setOrbState}
             />
           </div>
 
@@ -260,10 +277,15 @@ export default function BrainInterface() {
               {showDash && (
                 <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
                   exit={{ height: 0, opacity: 0 }} className="px-4 pb-4">
-                  <BrainDash />
+                  <BrainDash orbState={orbState} />
                 </motion.div>
               )}
             </AnimatePresence>
+          </div>
+
+          {/* Stack Flow Diagram */}
+          <div className="border-b border-slate-800/40 px-4 pb-4">
+            <StackFlowDiagram orbState={orbState} />
           </div>
 
           {/* Agent Network */}
