@@ -63,6 +63,23 @@ async function apiPost(path, body, { maxAttempts = 4, baseDelay = 1000 } = {}) {
   throw lastErr || new Error('Brain unavailable — please try again in a moment.')
 }
 
+// ── Brain health probe — polls until brain responds, max 90s ─────────────────
+async function waitForBrain(onStatus) {
+  const deadline = Date.now() + 90_000
+  let attempt = 0
+  while (Date.now() < deadline) {
+    attempt++
+    try {
+      const r = await fetch(`${BRAIN_URL}/health`, { signal: AbortSignal.timeout(5000) })
+      if (r.ok) return true
+    } catch {}
+    const wait = Math.min(1500 * attempt, 6000)
+    onStatus(`Connecting to Oriel4o${'.'.repeat((attempt % 3) + 1)}`)
+    await new Promise(r => setTimeout(r, wait))
+  }
+  return false
+}
+
 // ── Hook ──────────────────────────────────────────────────────────────────────
 export function useCorporateAuth() {
   try { return JSON.parse(sessionStorage.getItem(SESSION_KEY)) } catch { return null }
@@ -70,7 +87,8 @@ export function useCorporateAuth() {
 
 // ── Gate ──────────────────────────────────────────────────────────────────────
 export default function CorporateGate({ onGrant }) {
-  const [step, setStep]           = useState('loading')  // loading|credentials|totp
+  const [step, setStep]           = useState('loading')  // loading|connecting|credentials|totp
+  const [connectStatus, setConnectStatus] = useState('Connecting to Oriel4o...')
   const [corpToken, setCorpToken] = useState('')
   const [pin, setPin]             = useState('')
   const [totpCode, setTotpCode]   = useState('')
@@ -86,19 +104,27 @@ export default function CorporateGate({ onGrant }) {
     setTimeout(() => setShake(false), 400)
   }
 
-  // On mount: try device token auto-login (with retry — brain may be cold-starting)
+  // On mount: wait for brain, then try device token auto-login
   useEffect(() => {
     ;(async () => {
+      // Step 1: ensure brain is reachable before any auth attempt
+      setStep('connecting')
+      const brainReady = await waitForBrain(setConnectStatus)
+      if (!brainReady) {
+        setStep('credentials')
+        setError('Brain is unreachable — check your connection and refresh.')
+        return
+      }
+
+      // Step 2: try device token (saved from previous session)
       const dt = localStorage.getItem(DEVICE_TOKEN_KEY)
       if (!dt) { setStep('credentials'); return }
       try {
         const data = await apiPost('/auth/device-token', { device_token: dt })
         grant(data, false)
       } catch (err) {
-        // If it's a network error (brain starting), show credentials not an error
         localStorage.removeItem(DEVICE_TOKEN_KEY)
         setStep('credentials')
-        // Only show error if it's an auth rejection, not a connection issue
         if (err.message && !err.message.includes('starting') && !err.message.includes('unavailable')) {
           setError(err.message)
         }
@@ -137,9 +163,13 @@ export default function CorporateGate({ onGrant }) {
     finally { setBusy(false) }
   }
 
-  if (step === 'loading') return (
-    <div className="min-h-screen bg-[#040810] flex items-center justify-center">
-      <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
+  if (step === 'loading' || step === 'connecting') return (
+    <div className="min-h-screen bg-[#040810] flex flex-col items-center justify-center gap-4">
+      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-700 to-blue-950 flex items-center justify-center">
+        <Cpu size={28} className="text-blue-300" />
+      </div>
+      <Loader2 className="w-6 h-6 text-blue-400 animate-spin" />
+      <p className="text-xs text-blue-400/60 tracking-widest">{connectStatus}</p>
     </div>
   )
 
