@@ -227,6 +227,13 @@ export default function CorporateGate({ onGrant }) {
 
         <p className="text-xs text-slate-700 text-center">
           CloneForge Corporation · TOTP 2FA · Session: 8 hours · Device token: 30 days
+          {' · '}
+          <button
+            onClick={() => { localStorage.clear(); sessionStorage.clear(); location.reload() }}
+            className="underline hover:text-slate-500 transition-colors"
+          >
+            Clear session
+          </button>
         </p>
       </motion.div>
     </div>
