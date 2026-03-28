@@ -90,10 +90,11 @@ export default function VoiceOrb({
       }
     } catch (err) {
       console.error('Brain stream error:', err)
-      const errMsg = `Connection issue — ${err.message}`
-      agent ? onAgentResponse?.(agent.id, errMsg, true) : onResponse?.(errMsg, true)
+      // Show a clean reconnecting message — never expose raw network errors in demo
+      const msg = 'Oriel4o is reconnecting — please try again in a moment.'
+      agent ? onAgentResponse?.(agent.id, msg, true) : onResponse?.(msg, true)
       setOrbState('idle'); setTranscript('')
-      if (continuousRef.current) setTimeout(() => startListening(), 1500)
+      if (continuousRef.current) setTimeout(() => startListening(), 2500)
       return
     }
 

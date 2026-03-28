@@ -23,11 +23,44 @@ const SESSION_KEY      = 'cf_corp_session'
 // ── API ───────────────────────────────────────────────────────────────────────
 const brainHeaders = { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' }
 
-async function apiPost(path, body) {
-  const r = await fetch(`${BRAIN_URL}${path}`, { method: 'POST', headers: brainHeaders, body: JSON.stringify(body) })
-  const data = await r.json()
-  if (!r.ok) throw new Error(data.detail || JSON.stringify(data))
-  return data
+// Retry with backoff — brain may be mid-redeploy (30-60s gap) on DO App Platform
+async function apiPost(path, body, { maxAttempts = 4, baseDelay = 1000 } = {}) {
+  let delay = baseDelay
+  let lastErr
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const r = await fetch(`${BRAIN_URL}${path}`, {
+        method: 'POST',
+        headers: brainHeaders,
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(12000),
+      })
+      if (r.status === 503 && attempt < maxAttempts) {
+        await new Promise(res => setTimeout(res, delay))
+        delay = Math.min(delay * 2, 8000)
+        continue
+      }
+      // Handle HTML error pages from DO (non-JSON 503)
+      const text = await r.text()
+      let data
+      try { data = JSON.parse(text) } catch { throw new Error('Brain is starting — please wait a moment and try again.') }
+      if (!r.ok) throw new Error(data.detail || data.error || JSON.stringify(data))
+      return data
+    } catch (err) {
+      lastErr = err
+      // Don't retry on auth errors (4xx) — only on network/503
+      if (err.message && !err.message.includes('starting') && attempt < maxAttempts) {
+        const isNetworkError = err.name === 'TypeError' || err.name === 'AbortError' || err.message === 'Failed to fetch'
+        if (isNetworkError) {
+          await new Promise(res => setTimeout(res, delay))
+          delay = Math.min(delay * 2, 8000)
+          continue
+        }
+      }
+      throw lastErr
+    }
+  }
+  throw lastErr || new Error('Brain unavailable — please try again in a moment.')
 }
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
@@ -53,7 +86,7 @@ export default function CorporateGate({ onGrant }) {
     setTimeout(() => setShake(false), 400)
   }
 
-  // On mount: try device token auto-login
+  // On mount: try device token auto-login (with retry — brain may be cold-starting)
   useEffect(() => {
     ;(async () => {
       const dt = localStorage.getItem(DEVICE_TOKEN_KEY)
@@ -61,9 +94,14 @@ export default function CorporateGate({ onGrant }) {
       try {
         const data = await apiPost('/auth/device-token', { device_token: dt })
         grant(data, false)
-      } catch {
+      } catch (err) {
+        // If it's a network error (brain starting), show credentials not an error
         localStorage.removeItem(DEVICE_TOKEN_KEY)
         setStep('credentials')
+        // Only show error if it's an auth rejection, not a connection issue
+        if (err.message && !err.message.includes('starting') && !err.message.includes('unavailable')) {
+          setError(err.message)
+        }
       }
     })()
   }, [])

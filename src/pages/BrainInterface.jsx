@@ -145,6 +145,19 @@ export default function BrainInterface() {
           </div>
         </div>
         <div className="flex items-center gap-4">
+          {/* Platform interface links */}
+          <div className="hidden sm:flex items-center gap-2">
+            <a href="https://cloneforge.io" target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3 py-1 rounded-lg border border-blue-500/30 bg-blue-500/10 text-blue-400 text-xs hover:bg-blue-500/20 transition-colors">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+              Physician Interface
+            </a>
+            <a href="https://cloneforge.io/clonepharma_sales" target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3 py-1 rounded-lg border border-indigo-500/30 bg-indigo-500/10 text-indigo-400 text-xs hover:bg-indigo-500/20 transition-colors">
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
+              Pharma Sales
+            </a>
+          </div>
           {activeAgent && (
             <motion.div initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }}
               className="flex items-center gap-2 px-3 py-1 rounded-full border border-emerald-500/30 bg-emerald-900/20 text-xs text-emerald-400">

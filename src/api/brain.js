@@ -8,10 +8,35 @@ const headers = () => ({
   'ngrok-skip-browser-warning': 'true',
 })
 
+// ── Resilient fetch — retries on network/503 errors with exponential backoff ──
+async function resilientFetch(url, opts, { maxAttempts = 4, baseDelay = 800 } = {}) {
+  let delay = baseDelay
+  let lastErr
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const res = await fetch(url, opts)
+      if (res.status === 503 && attempt < maxAttempts) {
+        // Brain is redeploying — wait and retry
+        await new Promise(r => setTimeout(r, delay))
+        delay = Math.min(delay * 2, 8000)
+        continue
+      }
+      return res
+    } catch (err) {
+      lastErr = err
+      if (attempt < maxAttempts) {
+        await new Promise(r => setTimeout(r, delay))
+        delay = Math.min(delay * 2, 8000)
+      }
+    }
+  }
+  throw lastErr || new Error('Brain unavailable after retries')
+}
+
 // ── Chat ──────────────────────────────────────────────────────────────────────
 
 export async function* streamChat(messages, collections = ['cloneforge_docs', 'cloneforge_web']) {
-  const res = await fetch(`${BRAIN_URL}/chat/stream`, {
+  const res = await resilientFetch(`${BRAIN_URL}/chat/stream`, {
     method: 'POST',
     headers: headers(),
     body: JSON.stringify({ messages, collections, stream: true }),
@@ -55,7 +80,7 @@ export async function listAgents() {
 }
 
 export async function* streamAgentMessage(agentId, message, collections) {
-  const res = await fetch(`${BRAIN_URL}/agents/${agentId}/message`, {
+  const res = await resilientFetch(`${BRAIN_URL}/agents/${agentId}/message`, {
     method: 'POST',
     headers: headers(),
     body: JSON.stringify({ message, collections }),
