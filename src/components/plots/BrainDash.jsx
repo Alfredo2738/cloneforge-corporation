@@ -8,6 +8,15 @@ import { getBrainStatus, listAgents, getLedgerStats } from '../../api/brain'
 // ── Expandable chart panel wrapper ────────────────────────────────────────────
 function ChartPanel({ title, children, expandedChildren }) {
   const [expanded, setExpanded] = useState(false)
+
+  // Close on Escape key
+  useEffect(() => {
+    if (!expanded) return
+    const handler = (e) => { if (e.key === 'Escape') setExpanded(false) }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [expanded])
+
   return (
     <>
       <div className="rounded-xl border border-slate-800/50 bg-slate-900/30 p-2 relative group">
@@ -23,24 +32,23 @@ function ChartPanel({ title, children, expandedChildren }) {
       {expanded && createPortal(
         <AnimatePresence>
           <motion.div
-            className="fixed inset-0 z-[9999] flex items-center justify-center p-6"
+            className="fixed inset-0 z-[9999] flex flex-col bg-[#040b16]"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            onClick={() => setExpanded(false)}
-            style={{ background: 'rgba(2,6,23,0.92)', backdropFilter: 'blur(8px)' }}
           >
-            <motion.div
-              className="bg-[#060f1e] border border-slate-700/60 rounded-2xl p-5 w-full max-w-4xl shadow-2xl"
-              initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              onClick={e => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-sm font-semibold text-slate-200 tracking-wide">{title}</span>
-                <button onClick={() => setExpanded(false)} className="p-1 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-slate-800 transition-colors">
-                  <X size={16} />
-                </button>
-              </div>
+            {/* Header bar */}
+            <div className="flex items-center justify-between px-8 py-4 border-b border-slate-800/60 flex-shrink-0">
+              <span className="text-base font-semibold text-slate-100 tracking-wide">{title}</span>
+              <button
+                onClick={() => setExpanded(false)}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors text-sm"
+              >
+                <X size={16} /> Close
+              </button>
+            </div>
+            {/* Chart fills remaining height */}
+            <div className="flex-1 overflow-auto p-6">
               {expandedChildren || children}
-            </motion.div>
+            </div>
           </motion.div>
         </AnimatePresence>,
         document.body
@@ -48,6 +56,9 @@ function ChartPanel({ title, children, expandedChildren }) {
     </>
   )
 }
+
+// Full viewport height minus header bar (~72px)
+const EXPANDED_H = () => Math.max(window.innerHeight - 120, 500)
 
 // ── Shared theme ─────────────────────────────────────────────────────────────
 const T = {
@@ -132,13 +143,13 @@ function NeuralWave({ tick, orbState, expanded }) {
         { x: t, y: wave3, type: 'scatter', mode: 'lines', line: { color: C.cyan, width: 1, dash: 'dash' }, name: 'RAG Pulse' },
       ]}
       layout={layout({
-        title: { text: 'Brain Activity — Live Signal', font: { color: '#cbd5e1', size: 12 } },
+        title: { text: 'Brain Activity — Live Signal', font: { color: '#cbd5e1', size: expanded ? 18 : 12 } },
         showlegend: true,
-        legend: { font: { color: '#64748b', size: 9 }, bgcolor: 'rgba(0,0,0,0)', orientation: 'h', x: 0, y: 1.18 },
-        height: expanded ? 400 : 190,
-        yaxis: { ...layout().yaxis, range: [-1.5, 1.5], title: { text: 'Amplitude', font: { size: 9 }, standoff: 4 } },
-        xaxis: { ...layout().xaxis, showticklabels: false, title: { text: 'Time →', font: { size: 9 }, standoff: 0 } },
-        margin: { t: 44, b: 24, l: 44, r: 12 },
+        legend: { font: { color: '#94a3b8', size: expanded ? 13 : 9 }, bgcolor: 'rgba(0,0,0,0)', orientation: 'h', x: 0, y: 1.08 },
+        height: expanded ? EXPANDED_H() : 190,
+        yaxis: { ...layout().yaxis, range: [-1.5, 1.5], title: { text: 'Amplitude', font: { size: expanded ? 13 : 9 }, standoff: 4 }, tickfont: { color: '#94a3b8', size: expanded ? 12 : 10 } },
+        xaxis: { ...layout().xaxis, showticklabels: false, title: { text: 'Time →', font: { size: expanded ? 13 : 9 }, standoff: 0 } },
+        margin: expanded ? { t: 60, b: 40, l: 64, r: 24 } : { t: 44, b: 24, l: 44, r: 12 },
       })}
       config={cfg}
       style={{ width: '100%' }}
@@ -172,12 +183,12 @@ function QdrantChart({ collections, expanded }) {
       ]}
       layout={layout({
         barmode: 'group',
-        title: { text: 'Qdrant Mesh — Collections', font: { color: '#cbd5e1', size: 12 } },
-        legend: { font: { color: '#64748b', size: 9 }, bgcolor: 'rgba(0,0,0,0)', x: 0.55, y: 1.18, orientation: 'h' },
-        height: expanded ? 440 : 220,
-        margin: { t: 44, b: 48, l: 40, r: 12 },
-        xaxis: { ...layout().xaxis, tickangle: -15, tickfont: { color: '#94a3b8', size: 10 } },
-        yaxis: { ...layout().yaxis, title: { text: 'Count', font: { size: 9 }, standoff: 4 } },
+        title: { text: 'Qdrant Mesh — Collections', font: { color: '#cbd5e1', size: expanded ? 18 : 12 } },
+        legend: { font: { color: '#94a3b8', size: expanded ? 13 : 9 }, bgcolor: 'rgba(0,0,0,0)', x: 0.55, y: 1.08, orientation: 'h' },
+        height: expanded ? EXPANDED_H() : 220,
+        margin: expanded ? { t: 60, b: 64, l: 64, r: 24 } : { t: 44, b: 48, l: 40, r: 12 },
+        xaxis: { ...layout().xaxis, tickangle: -15, tickfont: { color: '#94a3b8', size: expanded ? 14 : 10 } },
+        yaxis: { ...layout().yaxis, title: { text: 'Count', font: { size: expanded ? 13 : 9 }, standoff: 4 }, tickfont: { color: '#94a3b8', size: expanded ? 13 : 10 } },
       })}
       config={cfg}
       style={{ width: '100%' }}
@@ -205,11 +216,12 @@ function AttentionHeatmap({ tick, expanded }) {
         hovertemplate: 'Layer %{y} | Head %{x}<br>Activation: %{z:.2f}<extra></extra>',
       }]}
       layout={layout({
-        title: { text: 'Attention Activation (8L × 12H)', font: { color: '#cbd5e1', size: 12 } },
-        height: expanded ? 440 : 220,
-        margin: { t: 36, b: 36, l: 40, r: 40 },
-        xaxis: { ...layout().xaxis, title: { text: 'Attention Head', font: { size: 9 }, standoff: 4 } },
-        yaxis: { ...layout().yaxis, title: { text: 'Layer', font: { size: 9 }, standoff: 4 } },
+        title: { text: 'Attention Activation (8L × 12H)', font: { color: '#cbd5e1', size: expanded ? 18 : 12 } },
+        height: expanded ? EXPANDED_H() : 220,
+        margin: expanded ? { t: 60, b: 60, l: 64, r: 80 } : { t: 36, b: 36, l: 40, r: 40 },
+        xaxis: { ...layout().xaxis, title: { text: 'Attention Head', font: { size: expanded ? 13 : 9 }, standoff: 4 }, tickfont: { color: '#94a3b8', size: expanded ? 12 : 10 } },
+        yaxis: { ...layout().yaxis, title: { text: 'Layer', font: { size: expanded ? 13 : 9 }, standoff: 4 }, tickfont: { color: '#94a3b8', size: expanded ? 12 : 10 } },
+        coloraxis: { colorbar: { thickness: expanded ? 20 : 8, tickfont: { color: '#94a3b8', size: expanded ? 12 : 8 } } },
       })}
       config={cfg}
       style={{ width: '100%' }}
@@ -235,11 +247,11 @@ function MessageActivity({ messageHistory, expanded }) {
         hovertemplate: 'Hour %{x}:00 UTC<br>%{y} messages<extra></extra>',
       }]}
       layout={layout({
-        title: { text: 'Message Activity — Last 24 h', font: { color: '#cbd5e1', size: 12 } },
-        height: expanded ? 400 : 190,
-        margin: { t: 36, b: 44, l: 48, r: 12 },
-        xaxis: { ...layout().xaxis, title: { text: 'Hour (UTC)', font: { size: 9 }, standoff: 4 }, dtick: 4, range: [-0.5, 23.5] },
-        yaxis: { ...layout().yaxis, title: { text: 'Messages', font: { size: 9 }, standoff: 4 }, rangemode: 'nonnegative' },
+        title: { text: 'Message Activity — Last 24 h', font: { color: '#cbd5e1', size: expanded ? 18 : 12 } },
+        height: expanded ? EXPANDED_H() : 190,
+        margin: expanded ? { t: 60, b: 64, l: 72, r: 24 } : { t: 36, b: 44, l: 48, r: 12 },
+        xaxis: { ...layout().xaxis, title: { text: 'Hour (UTC)', font: { size: expanded ? 13 : 9 }, standoff: 4 }, dtick: expanded ? 2 : 4, range: [-0.5, 23.5], tickfont: { color: '#94a3b8', size: expanded ? 13 : 10 } },
+        yaxis: { ...layout().yaxis, title: { text: 'Messages', font: { size: expanded ? 13 : 9 }, standoff: 4 }, rangemode: 'nonnegative', tickfont: { color: '#94a3b8', size: expanded ? 13 : 10 } },
       })}
       config={cfg}
       style={{ width: '100%' }}
@@ -326,7 +338,7 @@ function ForgeLedger({ ledger }) {
 }
 
 // ── Agent Network ─────────────────────────────────────────────────────────────
-function AgentNetwork({ liveAgents }) {
+function AgentNetwork({ liveAgents, expanded }) {
   const counts = { master: 0, subagent: 0, microagent: 0, rogue: 0 }
   liveAgents.forEach(a => { counts[a.type] = (counts[a.type] || 0) + 1 })
   const labels = Object.keys(counts)
@@ -351,13 +363,14 @@ function AgentNetwork({ liveAgents }) {
       }]}
       layout={{
         ...layout(),
-        title: { text: 'Agent Network', font: { color: '#cbd5e1', size: 12 } },
-        showlegend: false,
-        height: 200,
-        margin: { t: 36, b: 10, l: 20, r: 20 },
+        title: { text: 'Agent Network', font: { color: '#cbd5e1', size: expanded ? 18 : 12 } },
+        showlegend: expanded,
+        legend: { font: { color: '#94a3b8', size: 14 }, bgcolor: 'rgba(0,0,0,0)' },
+        height: expanded ? EXPANDED_H() : 200,
+        margin: expanded ? { t: 60, b: 40, l: 40, r: 40 } : { t: 36, b: 10, l: 20, r: 20 },
         annotations: [{
-          text: `<b>${total}</b><br><span style="font-size:9px">agents</span>`,
-          font: { size: 13, color: '#94a3b8' },
+          text: `<b>${total}</b><br><span style="font-size:${expanded ? 16 : 9}px">agents</span>`,
+          font: { size: expanded ? 28 : 13, color: '#94a3b8' },
           showarrow: false, x: 0.5, y: 0.5,
         }],
       }}
@@ -383,15 +396,15 @@ function FactTopics({ topics, expanded }) {
         },
         text: sorted.map(t => String(t.count)),
         textposition: 'outside',
-        textfont: { color: '#94a3b8', size: 9 },
+        textfont: { color: '#94a3b8', size: expanded ? 13 : 9 },
         hovertemplate: '%{y}: %{x} facts<extra></extra>',
       }]}
       layout={layout({
-        title: { text: 'Top Fact Topics', font: { color: '#cbd5e1', size: 12 } },
-        height: expanded ? 440 : 220,
-        margin: { t: 36, b: 24, l: 80, r: 40 },
-        xaxis: { ...layout().xaxis, title: { text: 'Count', font: { size: 9 }, standoff: 4 } },
-        yaxis: { ...layout().yaxis, autorange: 'reversed', tickfont: { color: '#94a3b8', size: 9 } },
+        title: { text: 'Top Fact Topics', font: { color: '#cbd5e1', size: expanded ? 18 : 12 } },
+        height: expanded ? EXPANDED_H() : 220,
+        margin: expanded ? { t: 60, b: 40, l: 200, r: 80 } : { t: 36, b: 24, l: 80, r: 40 },
+        xaxis: { ...layout().xaxis, title: { text: 'Count', font: { size: expanded ? 13 : 9 }, standoff: 4 }, tickfont: { color: '#94a3b8', size: expanded ? 13 : 10 } },
+        yaxis: { ...layout().yaxis, autorange: 'reversed', tickfont: { color: '#94a3b8', size: expanded ? 14 : 9 } },
       })}
       config={cfg}
       style={{ width: '100%' }}
@@ -499,8 +512,8 @@ export default function BrainDash({ orbState = 'idle' }) {
 
       {/* Agent Network */}
       <ChartPanel title="Agent Network"
-        expandedChildren={<AgentNetwork liveAgents={liveAgents} expanded />}>
-        <AgentNetwork liveAgents={liveAgents} />
+        expandedChildren={<AgentNetwork liveAgents={liveAgents} expanded={true} />}>
+        <AgentNetwork liveAgents={liveAgents} expanded={false} />
       </ChartPanel>
     </div>
   )

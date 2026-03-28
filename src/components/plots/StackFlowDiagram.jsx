@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { createPortal } from 'react-dom'
 import { Maximize2, X } from 'lucide-react'
@@ -230,31 +230,29 @@ function DiagramContent({ orbState, compact = false }) {
 
 // ── Expanded modal ────────────────────────────────────────────────────────────
 function ExpandedModal({ orbState, onClose }) {
+  useEffect(() => {
+    const handler = (e) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onClose])
+
   return createPortal(
     <AnimatePresence>
       <motion.div
-        className="fixed inset-0 z-[9999] flex items-center justify-center p-6"
+        className="fixed inset-0 z-[9999] flex flex-col bg-[#040b16]"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        onClick={onClose}
-        style={{ background: 'rgba(2,6,23,0.92)', backdropFilter: 'blur(8px)' }}
       >
-        <motion.div
-          className="bg-[#060f1e] border border-slate-700/60 rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl"
-          initial={{ scale: 0.95, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          exit={{ scale: 0.95, opacity: 0 }}
-          onClick={e => e.stopPropagation()}
-        >
-          <div className="flex items-center justify-between mb-4">
-            <span className="text-sm font-semibold text-slate-200 tracking-wide">CloneForge Infrastructure Stack</span>
-            <button onClick={onClose} className="p-1 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-slate-800 transition-colors">
-              <X size={16} />
-            </button>
-          </div>
+        <div className="flex items-center justify-between px-8 py-4 border-b border-slate-800/60 flex-shrink-0">
+          <span className="text-base font-semibold text-slate-100 tracking-wide">CloneForge Infrastructure Stack</span>
+          <button onClick={onClose} className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors text-sm">
+            <X size={16} /> Close
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-8 max-w-4xl mx-auto w-full">
           <DiagramContent orbState={orbState} compact={false} />
-        </motion.div>
+        </div>
       </motion.div>
     </AnimatePresence>,
     document.body
