@@ -1,11 +1,11 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Activity, Globe, Zap, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Send, X, Network } from 'lucide-react'
+import { Activity, Globe, Zap, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Send, X, Network, Volume2, Loader2 } from 'lucide-react'
 import VoiceOrb from '../components/voice/VoiceOrb'
 import AgentPanel from '../components/agents/AgentPanel'
 import BrainDash from '../components/plots/BrainDash'
 import StackFlowDiagram from '../components/plots/StackFlowDiagram'
-import { streamChat, ingestUrls } from '../api/brain'
+import { streamChat, ingestUrls, synthesizeVoice, playAudioB64 } from '../api/brain'
 
 const ALL_COLLECTIONS = ['cloneforge_docs', 'cloneforge_medical_records', 'cloneforge_web']
 
@@ -72,7 +72,21 @@ export default function BrainInterface() {
   const [ingestStatus, setIngestStatus] = useState('')
   const [activeAgent, setActiveAgent]   = useState(null)
   const [orbState, setOrbState]         = useState('idle')
+  const [speakingIdx, setSpeakingIdx]   = useState(null)
   const chatContainerRef = useRef(null)
+
+  const handleSpeak = useCallback(async (text, idx) => {
+    if (speakingIdx !== null) return
+    setSpeakingIdx(idx)
+    try {
+      const b64 = await synthesizeVoice(text, 'oriel')
+      await playAudioB64(b64)
+    } catch (e) {
+      console.warn('TTS failed:', e)
+    } finally {
+      setSpeakingIdx(null)
+    }
+  }, [speakingIdx])
 
   useEffect(() => {
     const el = chatContainerRef.current
@@ -252,9 +266,23 @@ export default function BrainInterface() {
                   className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${speakerStyle(msg)}`}>
                     {msg.role === 'assistant' && (
-                      <p className="text-xs mb-1.5 font-medium tracking-widest opacity-60">
-                        {msg.speaker || 'ORIEL4O'}
-                      </p>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <p className="text-xs font-medium tracking-widest opacity-60">
+                          {msg.speaker || 'ORIEL4O'}
+                        </p>
+                        {msg.content && !isStreaming && (
+                          <button
+                            onClick={() => handleSpeak(msg.content, i)}
+                            disabled={speakingIdx !== null}
+                            title="Speak this response"
+                            className="ml-3 p-1 rounded-md opacity-40 hover:opacity-100 transition-opacity disabled:cursor-wait"
+                          >
+                            {speakingIdx === i
+                              ? <Loader2 size={12} className="animate-spin" />
+                              : <Volume2 size={12} />}
+                          </button>
+                        )}
+                      </div>
                     )}
                     {msg.role === 'assistant' ? (() => {
                       const { main, translation } = parseTranslation(msg.content)
