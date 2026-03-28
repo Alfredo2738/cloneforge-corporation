@@ -17,6 +17,17 @@ const MESH_SEED_URLS = [
 
 const WELCOME = `I am Oriel4o — the master intelligence of CloneForge Corporation. I operate across your entire knowledge mesh: clinical documentation, research literature, indexed web intelligence, and live agent networks. Speak or type. I'm listening.`
 
+// Split response text on the 〔EN〕 translation marker
+function parseTranslation(content) {
+  const marker = '〔EN〕'
+  const idx = content.indexOf(marker)
+  if (idx === -1) return { main: content, translation: null }
+  return {
+    main: content.slice(0, idx).trim(),
+    translation: content.slice(idx + marker.length).trim(),
+  }
+}
+
 export default function BrainInterface() {
   const [conversation, setConversation]       = useState([])
   const [displayMessages, setDisplayMessages] = useState([
@@ -228,11 +239,30 @@ export default function BrainInterface() {
                         {msg.speaker || 'ORIEL4O'}
                       </p>
                     )}
-                    <p className="whitespace-pre-wrap">{msg.content}
-                      {isStreaming && i === displayMessages.length - 1 && msg.role === 'assistant' && (
-                        <span className="inline-block w-1 h-4 bg-current ml-0.5 animate-pulse opacity-70" />
-                      )}
-                    </p>
+                    {msg.role === 'assistant' ? (() => {
+                      const { main, translation } = parseTranslation(msg.content)
+                      return (
+                        <>
+                          <p className="whitespace-pre-wrap">{main}
+                            {isStreaming && i === displayMessages.length - 1 && (
+                              <span className="inline-block w-1 h-4 bg-current ml-0.5 animate-pulse opacity-70" />
+                            )}
+                          </p>
+                          {translation && (
+                            <div className="mt-2 pt-2 border-t border-white/10">
+                              <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">EN Translation</p>
+                              <p className="text-xs text-slate-400 italic whitespace-pre-wrap">{translation}</p>
+                            </div>
+                          )}
+                        </>
+                      )
+                    })() : (
+                      <p className="whitespace-pre-wrap">{msg.content}
+                        {isStreaming && i === displayMessages.length - 1 && msg.role === 'assistant' && (
+                          <span className="inline-block w-1 h-4 bg-current ml-0.5 animate-pulse opacity-70" />
+                        )}
+                      </p>
+                    )}
                     {msg.sources?.length > 0 && (
                       <div className="mt-2 pt-2 border-t border-current/10 flex flex-wrap gap-1">
                         {msg.sources.slice(0, 4).map((s, si) => (

@@ -79,11 +79,11 @@ export async function listAgents() {
   return res.json()
 }
 
-export async function* streamAgentMessage(agentId, message, collections) {
+export async function* streamAgentMessage(agentId, message, collections, language = 'en') {
   const res = await resilientFetch(`${BRAIN_URL}/agents/${agentId}/message`, {
     method: 'POST',
     headers: headers(),
-    body: JSON.stringify({ message, collections }),
+    body: JSON.stringify({ message, collections, language }),
   })
   const reader = res.body.getReader()
   const decoder = new TextDecoder()

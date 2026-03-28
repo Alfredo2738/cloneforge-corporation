@@ -78,7 +78,7 @@ export default function VoiceOrb({
 
     try {
       if (agent) {
-        for await (const event of streamAgentMessage(agent.id, text)) {
+        for await (const event of streamAgentMessage(agent.id, text, collections, curLang.tts)) {
           if (event.type === 'token') {
             fullResponse += event.data
             onAgentResponse?.(agent.id, fullResponse, false)
@@ -218,6 +218,8 @@ export default function VoiceOrb({
     accTextRef.current = ''
     try { recognitionRef.current?.stop() } catch {}
 
+    // Sync ref immediately — don't wait for React's async useEffect to fire
+    langRef.current = langObj
     setLang(langObj)
     setShowLangPicker(false)
 
