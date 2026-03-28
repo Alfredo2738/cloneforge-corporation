@@ -510,12 +510,7 @@ export default function BrainInterface() {
               className="border-l border-slate-800/60 flex flex-col overflow-y-auto flex-shrink-0 overflow-x-hidden"
               style={{ width: 400 }}
             >
-              {/* Brain Analytics */}
-              <SidebarSection icon={Activity} label="BRAIN ANALYTICS" defaultOpen={true}>
-                <BrainDash orbState={orbState} />
-              </SidebarSection>
-
-              {/* Infrastructure Stack */}
+              {/* Infrastructure Stack — top, always visible */}
               <SidebarSection icon={Network} label="INFRASTRUCTURE STACK" defaultOpen={true}>
                 <StackFlowDiagram orbState={orbState} />
               </SidebarSection>
@@ -533,6 +528,11 @@ export default function BrainInterface() {
                     ])
                   }}
                 />
+              </SidebarSection>
+
+              {/* Brain Analytics — collapsed by default, expand to inspect */}
+              <SidebarSection icon={Activity} label="BRAIN ANALYTICS" defaultOpen={false}>
+                <BrainDash orbState={orbState} />
               </SidebarSection>
 
               {/* URL Ingest */}
