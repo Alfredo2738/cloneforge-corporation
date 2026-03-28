@@ -176,6 +176,31 @@ export async function playAudioB64(b64) {
   }
 }
 
+// ── Panel of experts ──────────────────────────────────────────────────────────
+
+export async function* streamPanelChat(question, collections = ['cloneforge_docs', 'cloneforge_medical_records', 'cloneforge_web'], language = 'en') {
+  const res = await resilientFetch(`${BRAIN_URL}/agents/panel`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ question, collections, language }),
+  })
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop()
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        try { yield JSON.parse(line.slice(6)) } catch {}
+      }
+    }
+  }
+}
+
 // ── Ingest ────────────────────────────────────────────────────────────────────
 
 export async function ingestUrls(urls, background = true) {

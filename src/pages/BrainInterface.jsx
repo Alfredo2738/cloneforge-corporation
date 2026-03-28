@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Activity, Globe, Zap, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Send, X, Network, Volume2, Loader2 } from 'lucide-react'
+import { Activity, Globe, Zap, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Send, X, Network, Volume2, Loader2, Users, Cpu } from 'lucide-react'
 import VoiceOrb from '../components/voice/VoiceOrb'
 import AgentPanel from '../components/agents/AgentPanel'
 import BrainDash from '../components/plots/BrainDash'
 import StackFlowDiagram from '../components/plots/StackFlowDiagram'
-import { streamChat, ingestUrls, synthesizeVoice, playAudioB64 } from '../api/brain'
+import { streamChat, streamPanelChat, ingestUrls, synthesizeVoice, playAudioB64 } from '../api/brain'
 
 const ALL_COLLECTIONS = ['cloneforge_docs', 'cloneforge_medical_records', 'cloneforge_web']
 
@@ -67,12 +67,14 @@ export default function BrainInterface() {
   const [input, setInput]           = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [sources, setSources]       = useState([])
-  const [sidebarOpen, setSidebarOpen] = useState(true)
-  const [urlInput, setUrlInput]     = useState('')
+  const [sidebarOpen, setSidebarOpen]   = useState(true)
+  const [urlInput, setUrlInput]         = useState('')
   const [ingestStatus, setIngestStatus] = useState('')
   const [activeAgent, setActiveAgent]   = useState(null)
   const [orbState, setOrbState]         = useState('idle')
   const [speakingIdx, setSpeakingIdx]   = useState(null)
+  const [panelMode, setPanelMode]       = useState(false)
+  const [autoSpeak, setAutoSpeak]       = useState(false)
   const chatContainerRef = useRef(null)
 
   const handleSpeak = useCallback(async (text, idx) => {
@@ -97,11 +99,16 @@ export default function BrainInterface() {
     ingestUrls(MESH_SEED_URLS, true).catch(() => {})
   }, [])
 
-  // ── Text send ─────────────────────────────────────────────────────────────
+  // ── Standard text send ────────────────────────────────────────────────────
   const handleSend = async (text) => {
     const userText = text || input.trim()
     if (!userText || isStreaming) return
     setInput('')
+
+    if (panelMode) {
+      await handlePanelSend(userText)
+      return
+    }
 
     const newConversation = [...conversation, { role: 'user', content: userText }]
     setConversation(newConversation)
@@ -125,8 +132,71 @@ export default function BrainInterface() {
       } else if (event.type === 'done') {
         setConversation(prev => [...prev, { role: 'assistant', content: assistantMsg.content }])
         setIsStreaming(false)
+        if (autoSpeak && assistantMsg.content) {
+          const msgIdx = conversation.length + 2
+          handleSpeak(assistantMsg.content, msgIdx)
+        }
       }
     }
+  }
+
+  // ── Panel of experts send ─────────────────────────────────────────────────
+  const handlePanelSend = async (userText) => {
+    setDisplayMessages(prev => [...prev, { role: 'user', content: userText }])
+    setIsStreaming(true)
+
+    // Panel header placeholder
+    const panelMsgId = `panel-${Date.now()}`
+    setDisplayMessages(prev => [...prev, {
+      role: 'panel', id: panelMsgId,
+      agents: [], agentResponses: {}, synthesis: '', synthesising: false,
+    }])
+
+    for await (const event of streamPanelChat(userText, ALL_COLLECTIONS)) {
+      if (event.type === 'panel_skip' || event.type === 'panel_error') {
+        // Fall back to standard chat
+        setDisplayMessages(prev => prev.filter(m => m.id !== panelMsgId))
+        setIsStreaming(false)
+        const newConv = [...conversation, { role: 'user', content: userText }]
+        setConversation(newConv)
+        setDisplayMessages(prev => [
+          ...prev,
+          { role: 'assistant', content: '', sources: [], speaker: 'ORIEL4O' },
+        ])
+        let fb = { role: 'assistant', content: '', sources: [], speaker: 'ORIEL4O' }
+        for await (const e2 of streamChat(newConv, ALL_COLLECTIONS)) {
+          if (e2.type === 'token') {
+            fb = { ...fb, content: fb.content + e2.data }
+            setDisplayMessages(prev => [...prev.slice(0, -1), fb])
+          } else if (e2.type === 'done') {
+            setIsStreaming(false)
+          }
+        }
+        return
+      }
+
+      setDisplayMessages(prev => prev.map(m => {
+        if (m.id !== panelMsgId) return m
+        if (event.type === 'panel_start')
+          return { ...m, agents: event.agents }
+        if (event.type === 'agent_response')
+          return { ...m, agentResponses: { ...m.agentResponses, [event.agent_id]: { name: event.agent_name, text: event.data } } }
+        if (event.type === 'synthesis_start')
+          return { ...m, synthesising: true }
+        if (event.type === 'synthesis_token')
+          return { ...m, synthesis: (m.synthesis || '') + event.data }
+        if (event.type === 'synthesis_done') {
+          setIsStreaming(false)
+          setConversation(prev => [...prev,
+            { role: 'user', content: userText },
+            { role: 'assistant', content: m.synthesis + event.data },
+          ])
+          return { ...m, synthesising: false }
+        }
+        return m
+      }))
+    }
+    setIsStreaming(false)
   }
 
   // ── Voice handlers ────────────────────────────────────────────────────────
@@ -262,8 +332,60 @@ export default function BrainInterface() {
           <div ref={chatContainerRef} className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
             <AnimatePresence initial={false}>
               {displayMessages.map((msg, i) => (
-                <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                <motion.div key={msg.id || i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
                   className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  {/* ── Panel message ── */}
+                  {msg.role === 'panel' ? (
+                    <div className="w-full max-w-[95%]">
+                      {/* Agent cards */}
+                      {msg.agents?.length > 0 && (
+                        <div className="mb-3">
+                          <p className="text-[10px] text-slate-500 font-mono uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                            <Users size={10} /> Expert Panel — {msg.agents.length} agents
+                          </p>
+                          <div className="grid grid-cols-1 gap-2">
+                            {msg.agents.map(a => {
+                              const resp = msg.agentResponses?.[a.id]
+                              return (
+                                <div key={a.id} className="rounded-xl border border-slate-700/50 bg-slate-900/60 px-4 py-3">
+                                  <div className="flex items-center gap-2 mb-1.5">
+                                    <Cpu size={10} className="text-cyan-400" />
+                                    <span className="text-[10px] font-semibold text-cyan-400 tracking-widest uppercase">{a.name}</span>
+                                    {!resp && <span className="text-[9px] text-slate-600 animate-pulse ml-auto">thinking…</span>}
+                                  </div>
+                                  {resp ? (
+                                    <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap">{resp.text}</p>
+                                  ) : (
+                                    <div className="h-2 bg-slate-800 rounded-full animate-pulse w-3/4 mt-1" />
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      {/* Synthesis */}
+                      {(msg.synthesising || msg.synthesis) && (
+                        <div className="rounded-xl border border-blue-500/30 bg-blue-900/10 px-4 py-3">
+                          <p className="text-[10px] font-semibold text-blue-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                            <Activity size={10} /> Oriel4o Synthesis
+                          </p>
+                          <p className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap">
+                            {msg.synthesis}
+                            {msg.synthesising && <span className="inline-block w-1 h-4 bg-blue-400 ml-0.5 animate-pulse" />}
+                          </p>
+                          {msg.synthesis && !msg.synthesising && (
+                            <button onClick={() => handleSpeak(msg.synthesis, i)}
+                              disabled={speakingIdx !== null}
+                              className="mt-2 flex items-center gap-1 text-[10px] text-blue-400 opacity-60 hover:opacity-100 transition-opacity">
+                              {speakingIdx === i ? <Loader2 size={10} className="animate-spin" /> : <Volume2 size={10} />}
+                              Speak synthesis
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
                   <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${speakerStyle(msg)}`}>
                     {msg.role === 'assistant' && (
                       <div className="flex items-center justify-between mb-1.5">
@@ -318,23 +440,52 @@ export default function BrainInterface() {
                       </div>
                     )}
                   </div>
+                  )}
                 </motion.div>
               ))}
             </AnimatePresence>
           </div>
 
-          <div className="border-t border-slate-800/60 px-4 py-3 flex gap-2 flex-shrink-0">
-            <input
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
-              placeholder={activeAgent ? `Type to ${activeAgent.name}… (voice routes to agent)` : 'Type to Oriel4o…'}
-              className="flex-1 bg-slate-800/60 border border-slate-700/50 rounded-xl px-4 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-blue-500/50 transition-colors"
-            />
-            <button onClick={() => handleSend()} disabled={isStreaming || !input.trim()}
-              className="p-2.5 rounded-xl bg-blue-600/20 border border-blue-500/30 text-blue-300 hover:bg-blue-600/40 disabled:opacity-40 transition-colors">
-              <Send size={16} />
-            </button>
+          <div className="border-t border-slate-800/60 px-4 py-3 flex flex-col gap-2 flex-shrink-0">
+            <div className="flex gap-2">
+              <input
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
+                placeholder={panelMode ? 'Panel mode — experts will converge on a response…' : activeAgent ? `Type to ${activeAgent.name}…` : 'Type to Oriel4o…'}
+                className="flex-1 bg-slate-800/60 border border-slate-700/50 rounded-xl px-4 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-blue-500/50 transition-colors"
+              />
+              <button onClick={() => handleSend()} disabled={isStreaming || !input.trim()}
+                className="p-2.5 rounded-xl bg-blue-600/20 border border-blue-500/30 text-blue-300 hover:bg-blue-600/40 disabled:opacity-40 transition-colors">
+                <Send size={16} />
+              </button>
+            </div>
+            <div className="flex items-center gap-3 px-1">
+              <button
+                onClick={() => setPanelMode(p => !p)}
+                title="Panel mode — spawns expert agents per source"
+                className={`flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-lg border transition-colors ${
+                  panelMode
+                    ? 'border-cyan-500/50 bg-cyan-900/20 text-cyan-400'
+                    : 'border-slate-700/50 bg-transparent text-slate-600 hover:text-slate-400'
+                }`}
+              >
+                <Users size={11} />
+                {panelMode ? 'Panel ON' : 'Panel'}
+              </button>
+              <button
+                onClick={() => setAutoSpeak(p => !p)}
+                title="Auto-speak — TTS every response"
+                className={`flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-lg border transition-colors ${
+                  autoSpeak
+                    ? 'border-green-500/50 bg-green-900/20 text-green-400'
+                    : 'border-slate-700/50 bg-transparent text-slate-600 hover:text-slate-400'
+                }`}
+              >
+                <Volume2 size={11} />
+                {autoSpeak ? 'Auto-speak ON' : 'Auto-speak'}
+              </button>
+            </div>
           </div>
         </div>
 
