@@ -1,6 +1,53 @@
 import { useEffect, useState, useCallback } from 'react'
+import { createPortal } from 'react-dom'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Maximize2, X } from 'lucide-react'
 import Plot from 'react-plotly.js'
 import { getBrainStatus, listAgents, getLedgerStats } from '../../api/brain'
+
+// ── Expandable chart panel wrapper ────────────────────────────────────────────
+function ChartPanel({ title, children, expandedChildren }) {
+  const [expanded, setExpanded] = useState(false)
+  return (
+    <>
+      <div className="rounded-xl border border-slate-800/50 bg-slate-900/30 p-2 relative group">
+        <button
+          onClick={() => setExpanded(true)}
+          className="absolute top-2 right-2 p-1 rounded opacity-0 group-hover:opacity-100 text-slate-600 hover:text-slate-300 hover:bg-slate-800/60 transition-all z-10"
+          title={`Expand ${title}`}
+        >
+          <Maximize2 size={11} />
+        </button>
+        {children}
+      </div>
+      {expanded && createPortal(
+        <AnimatePresence>
+          <motion.div
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-6"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={() => setExpanded(false)}
+            style={{ background: 'rgba(2,6,23,0.92)', backdropFilter: 'blur(8px)' }}
+          >
+            <motion.div
+              className="bg-[#060f1e] border border-slate-700/60 rounded-2xl p-5 w-full max-w-4xl shadow-2xl"
+              initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-sm font-semibold text-slate-200 tracking-wide">{title}</span>
+                <button onClick={() => setExpanded(false)} className="p-1 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-slate-800 transition-colors">
+                  <X size={16} />
+                </button>
+              </div>
+              {expandedChildren || children}
+            </motion.div>
+          </motion.div>
+        </AnimatePresence>,
+        document.body
+      )}
+    </>
+  )
+}
 
 // ── Shared theme ─────────────────────────────────────────────────────────────
 const T = {
@@ -63,7 +110,7 @@ function SystemVitals({ status, ledger, lastUpdate }) {
 }
 
 // ── Neural Wave (animated) ────────────────────────────────────────────────────
-function NeuralWave({ tick, orbState }) {
+function NeuralWave({ tick, orbState, expanded }) {
   const n = 150
   const t = Array.from({ length: n }, (_, i) => i / 15)
   const phase = tick * 0.28
@@ -88,7 +135,7 @@ function NeuralWave({ tick, orbState }) {
         title: { text: 'Brain Activity — Live Signal', font: { color: '#cbd5e1', size: 12 } },
         showlegend: true,
         legend: { font: { color: '#64748b', size: 9 }, bgcolor: 'rgba(0,0,0,0)', orientation: 'h', x: 0, y: 1.18 },
-        height: 190,
+        height: expanded ? 400 : 190,
         yaxis: { ...layout().yaxis, range: [-1.5, 1.5], title: { text: 'Amplitude', font: { size: 9 }, standoff: 4 } },
         xaxis: { ...layout().xaxis, showticklabels: false, title: { text: 'Time →', font: { size: 9 }, standoff: 0 } },
         margin: { t: 44, b: 24, l: 44, r: 12 },
@@ -100,7 +147,7 @@ function NeuralWave({ tick, orbState }) {
 }
 
 // ── Qdrant Mesh Chart ─────────────────────────────────────────────────────────
-function QdrantChart({ collections }) {
+function QdrantChart({ collections, expanded }) {
   const labels  = Object.keys(collections)
   const points  = labels.map(k => collections[k]?.points || 0)
   const indexed = labels.map(k => collections[k]?.indexed_vectors || 0)
@@ -127,7 +174,7 @@ function QdrantChart({ collections }) {
         barmode: 'group',
         title: { text: 'Qdrant Mesh — Collections', font: { color: '#cbd5e1', size: 12 } },
         legend: { font: { color: '#64748b', size: 9 }, bgcolor: 'rgba(0,0,0,0)', x: 0.55, y: 1.18, orientation: 'h' },
-        height: 220,
+        height: expanded ? 440 : 220,
         margin: { t: 44, b: 48, l: 40, r: 12 },
         xaxis: { ...layout().xaxis, tickangle: -15, tickfont: { color: '#94a3b8', size: 10 } },
         yaxis: { ...layout().yaxis, title: { text: 'Count', font: { size: 9 }, standoff: 4 } },
@@ -139,7 +186,7 @@ function QdrantChart({ collections }) {
 }
 
 // ── Attention Heatmap ─────────────────────────────────────────────────────────
-function AttentionHeatmap({ tick }) {
+function AttentionHeatmap({ tick, expanded }) {
   const layers = 8, heads = 12
   const phase = tick * 0.18
   const z = Array.from({ length: layers }, (_, l) =>
@@ -159,7 +206,7 @@ function AttentionHeatmap({ tick }) {
       }]}
       layout={layout({
         title: { text: 'Attention Activation (8L × 12H)', font: { color: '#cbd5e1', size: 12 } },
-        height: 220,
+        height: expanded ? 440 : 220,
         margin: { t: 36, b: 36, l: 40, r: 40 },
         xaxis: { ...layout().xaxis, title: { text: 'Attention Head', font: { size: 9 }, standoff: 4 } },
         yaxis: { ...layout().yaxis, title: { text: 'Layer', font: { size: 9 }, standoff: 4 } },
@@ -171,7 +218,7 @@ function AttentionHeatmap({ tick }) {
 }
 
 // ── Message Activity ──────────────────────────────────────────────────────────
-function MessageActivity({ messageHistory }) {
+function MessageActivity({ messageHistory, expanded }) {
   const empty = !messageHistory?.length
   const hours  = empty ? Array.from({ length: 24 }, (_, i) => i) : messageHistory.map(r => r.hour % 24)
   const counts = empty ? Array(24).fill(0) : messageHistory.map(r => r.count)
@@ -189,7 +236,7 @@ function MessageActivity({ messageHistory }) {
       }]}
       layout={layout({
         title: { text: 'Message Activity — Last 24 h', font: { color: '#cbd5e1', size: 12 } },
-        height: 190,
+        height: expanded ? 400 : 190,
         margin: { t: 36, b: 44, l: 48, r: 12 },
         xaxis: { ...layout().xaxis, title: { text: 'Hour (UTC)', font: { size: 9 }, standoff: 4 }, dtick: 4, range: [-0.5, 23.5] },
         yaxis: { ...layout().yaxis, title: { text: 'Messages', font: { size: 9 }, standoff: 4 }, rangemode: 'nonnegative' },
@@ -321,7 +368,7 @@ function AgentNetwork({ liveAgents }) {
 }
 
 // ── Fact Topics Bar ───────────────────────────────────────────────────────────
-function FactTopics({ topics }) {
+function FactTopics({ topics, expanded }) {
   if (!topics?.length) return null
   const sorted = [...topics].sort((a, b) => b.count - a.count).slice(0, 8)
   return (
@@ -341,7 +388,7 @@ function FactTopics({ topics }) {
       }]}
       layout={layout({
         title: { text: 'Top Fact Topics', font: { color: '#cbd5e1', size: 12 } },
-        height: 220,
+        height: expanded ? 440 : 220,
         margin: { t: 36, b: 24, l: 80, r: 40 },
         xaxis: { ...layout().xaxis, title: { text: 'Count', font: { size: 9 }, standoff: 4 } },
         yaxis: { ...layout().yaxis, autorange: 'reversed', tickfont: { color: '#94a3b8', size: 9 } },
@@ -409,30 +456,35 @@ export default function BrainDash({ orbState = 'idle' }) {
       <SystemVitals status={status} ledger={ledger} lastUpdate={lastUpdate} />
 
       {/* Neural Wave */}
-      <div className="rounded-xl border border-slate-800/50 bg-slate-900/30 p-2">
+      <ChartPanel title="Brain Activity — Live Signal"
+        expandedChildren={<NeuralWave tick={tick} orbState={orbState} expanded />}>
         <NeuralWave tick={tick} orbState={orbState} />
-      </div>
+      </ChartPanel>
 
       {/* Qdrant + Attention */}
       <div className="grid grid-cols-2 gap-2">
-        <div className="rounded-xl border border-slate-800/50 bg-slate-900/30 p-2">
+        <ChartPanel title="Qdrant Mesh — Collections"
+          expandedChildren={<QdrantChart collections={collections} expanded />}>
           <QdrantChart collections={collections} />
-        </div>
-        <div className="rounded-xl border border-slate-800/50 bg-slate-900/30 p-2">
+        </ChartPanel>
+        <ChartPanel title="Attention Activation"
+          expandedChildren={<AttentionHeatmap tick={tick} expanded />}>
           <AttentionHeatmap tick={tick} />
-        </div>
+        </ChartPanel>
       </div>
 
       {/* Message Activity */}
-      <div className="rounded-xl border border-slate-800/50 bg-slate-900/30 p-2">
+      <ChartPanel title="Message Activity — Last 24h"
+        expandedChildren={<MessageActivity messageHistory={msgHistory} expanded />}>
         <MessageActivity messageHistory={msgHistory} />
-      </div>
+      </ChartPanel>
 
-      {/* Fact Topics (only if data exists) */}
+      {/* Fact Topics */}
       {topics.length > 0 && (
-        <div className="rounded-xl border border-slate-800/50 bg-slate-900/30 p-2">
+        <ChartPanel title="Top Fact Topics"
+          expandedChildren={<FactTopics topics={topics} expanded />}>
           <FactTopics topics={topics} />
-        </div>
+        </ChartPanel>
       )}
 
       {/* Postgres */}
@@ -446,9 +498,10 @@ export default function BrainDash({ orbState = 'idle' }) {
       </div>
 
       {/* Agent Network */}
-      <div className="rounded-xl border border-slate-800/50 bg-slate-900/30 p-2">
+      <ChartPanel title="Agent Network"
+        expandedChildren={<AgentNetwork liveAgents={liveAgents} expanded />}>
         <AgentNetwork liveAgents={liveAgents} />
-      </div>
+      </ChartPanel>
     </div>
   )
 }
