@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useState } from 'react'
 import BrainInterface from './pages/BrainInterface'
+import ClonePharmaSales from './pages/ClonePharmaSales'
 import CorporateGate, { useCorporateAuth } from './components/auth/CorporateGate'
 
 function GatedBrain() {
@@ -16,6 +17,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<GatedBrain />} />
+        <Route path="/clonepharma_sales" element={<ClonePharmaSales />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

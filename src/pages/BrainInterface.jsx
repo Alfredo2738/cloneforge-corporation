@@ -530,8 +530,8 @@ export default function BrainInterface() {
                 />
               </SidebarSection>
 
-              {/* Brain Analytics — collapsed by default, expand to inspect */}
-              <SidebarSection icon={Activity} label="BRAIN ANALYTICS" defaultOpen={false}>
+              {/* Brain Analytics — open by default */}
+              <SidebarSection icon={Activity} label="BRAIN ANALYTICS" defaultOpen={true}>
                 <BrainDash orbState={orbState} />
               </SidebarSection>
 
