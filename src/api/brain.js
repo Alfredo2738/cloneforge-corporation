@@ -1,4 +1,5 @@
-const BRAIN_URL = import.meta.env.VITE_BRAIN_URL || 'http://localhost:8000'
+const BRAIN_URL = import.meta.env.VITE_BRAIN_URL
+if (!BRAIN_URL) throw new Error('VITE_BRAIN_URL is not set — check vercel.json build.env')
 const BRAIN_KEY = import.meta.env.VITE_BRAIN_API_KEY || ''
 
 const headers = () => ({

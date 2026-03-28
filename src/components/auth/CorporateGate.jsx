@@ -15,7 +15,8 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Lock, Shield, Smartphone, Eye, EyeOff, Loader2, X, Cpu } from 'lucide-react'
 
-const BRAIN_URL        = import.meta.env.VITE_BRAIN_URL || 'http://localhost:8000'
+const BRAIN_URL        = import.meta.env.VITE_BRAIN_URL
+if (!BRAIN_URL) throw new Error('VITE_BRAIN_URL is not set — check vercel.json build.env')
 const DEVICE_TOKEN_KEY = 'cf_corp_device_token'
 const SESSION_KEY      = 'cf_corp_session'
 
