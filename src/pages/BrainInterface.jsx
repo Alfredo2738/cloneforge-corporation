@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Activity, Globe, Zap, ChevronDown, ChevronUp, Send, X } from 'lucide-react'
+import { Activity, Globe, Zap, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Send, X, Network } from 'lucide-react'
 import VoiceOrb from '../components/voice/VoiceOrb'
 import AgentPanel from '../components/agents/AgentPanel'
 import BrainDash from '../components/plots/BrainDash'
@@ -17,7 +17,6 @@ const MESH_SEED_URLS = [
 
 const WELCOME = `I am Oriel4o — the master intelligence of CloneForge Corporation. I operate across your entire knowledge mesh: clinical documentation, research literature, indexed web intelligence, and live agent networks. Speak or type. I'm listening.`
 
-// Split response text on the 〔EN〕 translation marker
 function parseTranslation(content) {
   const marker = '〔EN〕'
   const idx = content.indexOf(marker)
@@ -28,6 +27,38 @@ function parseTranslation(content) {
   }
 }
 
+// Collapsible sidebar section
+function SidebarSection({ icon: Icon, label, defaultOpen = true, children }) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div className="border-b border-slate-800/40">
+      <button
+        onClick={() => setOpen(p => !p)}
+        className="w-full flex items-center justify-between px-4 py-3 text-xs text-slate-400 hover:text-slate-200 transition-colors"
+      >
+        <span className="flex items-center gap-2 font-semibold tracking-widest">
+          <Icon size={13} /> {label}
+        </span>
+        {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            key="content"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="px-4 pb-4">{children}</div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
 export default function BrainInterface() {
   const [conversation, setConversation]       = useState([])
   const [displayMessages, setDisplayMessages] = useState([
@@ -36,11 +67,10 @@ export default function BrainInterface() {
   const [input, setInput]           = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [sources, setSources]       = useState([])
-  const [showDash, setShowDash]     = useState(true)
-  const [showAgents, setShowAgents] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
   const [urlInput, setUrlInput]     = useState('')
   const [ingestStatus, setIngestStatus] = useState('')
-  const [activeAgent, setActiveAgent]   = useState(null)  // { id, name, voiceKey, type }
+  const [activeAgent, setActiveAgent]   = useState(null)
   const [orbState, setOrbState]         = useState('idle')
   const chatContainerRef = useRef(null)
 
@@ -49,12 +79,11 @@ export default function BrainInterface() {
     if (el) el.scrollTop = el.scrollHeight
   }, [displayMessages])
 
-  // Seed mesh with clinical + pharma URLs once on mount (background, silent)
   useEffect(() => {
     ingestUrls(MESH_SEED_URLS, true).catch(() => {})
   }, [])
 
-  // ── Text send to Oriel ────────────────────────────────────────────────────
+  // ── Text send ─────────────────────────────────────────────────────────────
   const handleSend = async (text) => {
     const userText = text || input.trim()
     if (!userText || isStreaming) return
@@ -86,20 +115,16 @@ export default function BrainInterface() {
     }
   }
 
-  // ── Voice transcript handler (from VoiceOrb) ──────────────────────────────
+  // ── Voice handlers ────────────────────────────────────────────────────────
   const handleVoiceTranscript = (text, agentId) => {
-    // Add user message to display
     setDisplayMessages(prev => [...prev, { role: 'user', content: text }])
-
     if (agentId) {
-      // Agent conversation — add empty agent placeholder
       const agent = activeAgent
       setDisplayMessages(prev => [
         ...prev,
         { role: 'assistant', content: '', sources: [], speaker: agent?.name?.toUpperCase() || 'AGENT', agentId },
       ])
     } else {
-      // Oriel conversation
       setDisplayMessages(prev => [
         ...prev,
         { role: 'assistant', content: '', sources: [], speaker: 'ORIEL4O' },
@@ -109,7 +134,6 @@ export default function BrainInterface() {
     }
   }
 
-  // ── Voice response handler ─────────────────────────────────────────────────
   const handleVoiceResponse = (text, done) => {
     setDisplayMessages(prev => {
       const msgs = [...prev]
@@ -122,11 +146,9 @@ export default function BrainInterface() {
     }
   }
 
-  // ── Agent voice response handler ──────────────────────────────────────────
   const handleAgentVoiceResponse = (agentId, text, done) => {
     setDisplayMessages(prev => {
       const msgs = [...prev]
-      // Find the last placeholder for this agent
       const idx = [...msgs].reverse().findIndex(m => m.agentId === agentId && m.role === 'assistant')
       if (idx !== -1) {
         const realIdx = msgs.length - 1 - idx
@@ -136,7 +158,7 @@ export default function BrainInterface() {
     })
   }
 
-  // ── URL ingest ────────────────────────────────────────────────────────────
+  // ── Ingest ────────────────────────────────────────────────────────────────
   const handleIngest = async () => {
     const urls = urlInput.split('\n').map(u => u.trim()).filter(Boolean)
     if (!urls.length) return
@@ -147,7 +169,7 @@ export default function BrainInterface() {
     setTimeout(() => setIngestStatus(''), 4000)
   }
 
-  // ── Speaker color mapping ─────────────────────────────────────────────────
+  // ── Speaker styles ────────────────────────────────────────────────────────
   const speakerStyle = (msg) => {
     if (msg.role === 'user') return 'bg-blue-600/30 border border-blue-500/20 text-blue-100'
     if (msg.agentId) {
@@ -171,7 +193,6 @@ export default function BrainInterface() {
           </div>
         </div>
         <div className="flex items-center gap-4">
-          {/* Platform interface links */}
           <div className="hidden sm:flex items-center gap-2">
             <a href="https://cloneforge.io" target="_blank" rel="noopener noreferrer"
               className="flex items-center gap-1.5 px-3 py-1 rounded-lg border border-blue-500/30 bg-blue-500/10 text-blue-400 text-xs hover:bg-blue-500/20 transition-colors">
@@ -189,9 +210,7 @@ export default function BrainInterface() {
               className="flex items-center gap-2 px-3 py-1 rounded-full border border-emerald-500/30 bg-emerald-900/20 text-xs text-emerald-400">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
               Talking to {activeAgent.name}
-              <button onClick={() => setActiveAgent(null)} className="ml-1 hover:text-emerald-200">
-                <X size={11} />
-              </button>
+              <button onClick={() => setActiveAgent(null)} className="ml-1 hover:text-emerald-200"><X size={11} /></button>
             </motion.div>
           )}
           <div className="flex items-center gap-2 text-xs text-green-400">
@@ -204,7 +223,6 @@ export default function BrainInterface() {
       <div className="flex flex-1 overflow-hidden">
         {/* Left: Voice + Chat */}
         <div className="flex flex-col flex-1 min-w-0">
-          {/* Voice orb */}
           <div className="flex justify-center py-6 border-b border-slate-800/40 flex-shrink-0">
             <VoiceOrb
               onTranscript={handleVoiceTranscript}
@@ -227,7 +245,6 @@ export default function BrainInterface() {
             />
           </div>
 
-          {/* Chat transcript */}
           <div ref={chatContainerRef} className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
             <AnimatePresence initial={false}>
               {displayMessages.map((msg, i) => (
@@ -278,7 +295,6 @@ export default function BrainInterface() {
             </AnimatePresence>
           </div>
 
-          {/* Text input */}
           <div className="border-t border-slate-800/60 px-4 py-3 flex gap-2 flex-shrink-0">
             <input
               value={input}
@@ -294,71 +310,75 @@ export default function BrainInterface() {
           </div>
         </div>
 
-        {/* Right sidebar */}
-        <div className="w-96 border-l border-slate-800/60 flex flex-col overflow-y-auto flex-shrink-0">
-          {/* Brain Analytics */}
-          <div className="border-b border-slate-800/40">
-            <button onClick={() => setShowDash(p => !p)}
-              className="w-full flex items-center justify-between px-4 py-3 text-xs text-slate-400 hover:text-slate-200 transition-colors">
-              <span className="flex items-center gap-2"><Activity size={13} /> BRAIN ANALYTICS</span>
-              {showDash ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-            </button>
-            <AnimatePresence>
-              {showDash && (
-                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }} className="px-4 pb-4">
-                  <BrainDash orbState={orbState} />
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          {/* Stack Flow Diagram */}
-          <div className="border-b border-slate-800/40 px-4 pb-4">
-            <StackFlowDiagram orbState={orbState} />
-          </div>
-
-          {/* Agent Network */}
-          <div className="border-b border-slate-800/40">
-            <button onClick={() => setShowAgents(p => !p)}
-              className="w-full flex items-center justify-between px-4 py-3 text-xs text-slate-400 hover:text-slate-200 transition-colors">
-              <span className="flex items-center gap-2"><Zap size={13} /> AGENT NETWORK</span>
-              {showAgents ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-            </button>
-            <AnimatePresence>
-              {showAgents && (
-                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }} className="px-4 pb-4">
-                  <AgentPanel
-                    activeAgentId={activeAgent?.id}
-                    onActivateAgent={(agent) => setActiveAgent(agent)}
-                    onDeactivateAgent={() => setActiveAgent(null)}
-                    onAgentMessage={({ agentId, agentName, agentType, message }) => {
-                      setDisplayMessages(prev => [
-                        ...prev,
-                        { role: 'assistant', content: message, sources: [], speaker: agentName?.toUpperCase() || `AGENT`, agentId, agentType },
-                      ])
-                    }}
-                  />
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          {/* URL Ingest */}
-          <div className="px-4 py-4">
-            <p className="text-xs text-slate-500 flex items-center gap-1.5 mb-2">
-              <Globe size={12} /> INDEX WEB KNOWLEDGE
-            </p>
-            <textarea value={urlInput} onChange={e => setUrlInput(e.target.value)}
-              placeholder="Paste URLs (one per line)…" rows={4}
-              className="w-full bg-slate-800/60 border border-slate-700/50 rounded-xl px-3 py-2 text-xs text-slate-300 placeholder:text-slate-600 outline-none focus:border-blue-500/50 resize-none transition-colors" />
-            <button onClick={handleIngest} disabled={!urlInput.trim()}
-              className="mt-2 w-full py-2 rounded-xl bg-blue-600/20 border border-blue-500/30 text-blue-300 text-xs hover:bg-blue-600/40 disabled:opacity-40 transition-colors">
-              {ingestStatus || 'Ingest into Qdrant Mesh'}
-            </button>
-          </div>
+        {/* Sidebar collapse toggle strip */}
+        <div className="flex flex-col items-center justify-center w-5 flex-shrink-0 border-l border-slate-800/60 bg-slate-900/20 cursor-pointer hover:bg-slate-800/40 transition-colors"
+          onClick={() => setSidebarOpen(p => !p)}
+          title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}>
+          {sidebarOpen
+            ? <ChevronRight size={12} className="text-slate-600" />
+            : <ChevronLeft size={12} className="text-slate-500" />}
         </div>
+
+        {/* Right sidebar */}
+        <AnimatePresence initial={false}>
+          {sidebarOpen && (
+            <motion.div
+              key="sidebar"
+              initial={{ width: 0, opacity: 0 }}
+              animate={{ width: 400, opacity: 1 }}
+              exit={{ width: 0, opacity: 0 }}
+              transition={{ duration: 0.25, ease: 'easeInOut' }}
+              className="border-l border-slate-800/60 flex flex-col overflow-y-auto flex-shrink-0 overflow-x-hidden"
+              style={{ width: 400 }}
+            >
+              {/* Brain Analytics */}
+              <SidebarSection icon={Activity} label="BRAIN ANALYTICS" defaultOpen={true}>
+                <BrainDash orbState={orbState} />
+              </SidebarSection>
+
+              {/* Infrastructure Stack */}
+              <SidebarSection icon={Network} label="INFRASTRUCTURE STACK" defaultOpen={true}>
+                <StackFlowDiagram orbState={orbState} />
+              </SidebarSection>
+
+              {/* Agent Network */}
+              <SidebarSection icon={Zap} label="AGENT NETWORK" defaultOpen={true}>
+                <AgentPanel
+                  activeAgentId={activeAgent?.id}
+                  onActivateAgent={(agent) => setActiveAgent(agent)}
+                  onDeactivateAgent={() => setActiveAgent(null)}
+                  onAgentMessage={({ agentId, agentName, agentType, message }) => {
+                    setDisplayMessages(prev => [
+                      ...prev,
+                      { role: 'assistant', content: message, sources: [], speaker: agentName?.toUpperCase() || 'AGENT', agentId, agentType },
+                    ])
+                  }}
+                />
+              </SidebarSection>
+
+              {/* URL Ingest */}
+              <div className="px-4 py-4">
+                <p className="text-xs font-semibold text-slate-400 tracking-widest flex items-center gap-1.5 mb-3">
+                  <Globe size={13} /> INDEX WEB KNOWLEDGE
+                </p>
+                <textarea
+                  value={urlInput}
+                  onChange={e => setUrlInput(e.target.value)}
+                  placeholder="Paste URLs — one per line…"
+                  rows={5}
+                  className="w-full bg-slate-800/60 border border-slate-700/50 rounded-xl px-3 py-2.5 text-xs text-slate-300 placeholder:text-slate-600 outline-none focus:border-blue-500/50 resize-none transition-colors leading-relaxed"
+                />
+                <button
+                  onClick={handleIngest}
+                  disabled={!urlInput.trim()}
+                  className="mt-2 w-full py-2 rounded-xl bg-blue-600/20 border border-blue-500/30 text-blue-300 text-xs font-semibold hover:bg-blue-600/40 disabled:opacity-40 transition-colors"
+                >
+                  {ingestStatus || 'Ingest into Qdrant Mesh'}
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   )

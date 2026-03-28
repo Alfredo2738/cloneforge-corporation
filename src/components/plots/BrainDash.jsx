@@ -94,8 +94,8 @@ function SystemVitals({ status, ledger, lastUpdate }) {
 
   const pill = (label, val, color) => (
     <div className="flex flex-col items-start bg-slate-900/70 border border-slate-800/60 rounded-lg px-3 py-2 min-w-0">
-      <span className="text-[9px] text-slate-600 tracking-widest uppercase mb-0.5">{label}</span>
-      <span className="text-xs font-mono font-semibold truncate" style={{ color }}>{val}</span>
+      <span className="text-[10px] text-slate-500 tracking-widest uppercase mb-0.5">{label}</span>
+      <span className="text-sm font-mono font-semibold truncate" style={{ color }}>{val}</span>
     </div>
   )
 
@@ -267,12 +267,12 @@ function PostgresStats({ pg }) {
 
   return (
     <div>
-      <p className="text-[9px] text-slate-600 mb-2 tracking-widest uppercase">Postgres — Live Row Counts</p>
+      <p className="text-[10px] text-slate-500 mb-2 tracking-widest uppercase font-semibold">Postgres — Live Row Counts</p>
       <div className="grid grid-cols-5 gap-1">
         {stats.map(s => (
           <div key={s.label} className="flex flex-col items-center bg-slate-950/60 rounded-lg py-2 px-1 border border-slate-800/50">
             <span className="text-sm font-bold font-mono" style={{ color: s.color }}>{s.val ?? '—'}</span>
-            <span className="text-[9px] text-slate-500 mt-0.5 text-center leading-tight">{s.label}</span>
+            <span className="text-[10px] text-slate-500 mt-0.5 text-center leading-tight">{s.label}</span>
           </div>
         ))}
       </div>
@@ -294,7 +294,7 @@ function ForgeLedger({ ledger }) {
 
   return (
     <div>
-      <p className="text-[9px] text-slate-600 mb-2 tracking-widest uppercase">Forge Ledger — CFU Balances</p>
+      <p className="text-[10px] text-slate-500 mb-2 tracking-widest uppercase font-semibold">Forge Ledger — CFU Balances</p>
       <div className="flex items-start gap-3">
         <div className="flex-1 min-w-0">
           {labels.map((k, i) => {
@@ -303,7 +303,7 @@ function ForgeLedger({ ledger }) {
             const active = node.active
             return (
               <div key={k} className="flex items-center gap-2 mb-1.5">
-                <span className={`text-[9px] w-20 truncate font-mono ${active ? 'text-slate-300' : 'text-slate-600'}`}>{k}</span>
+                <span className={`text-[10px] w-20 truncate font-mono ${active ? 'text-slate-300' : 'text-slate-600'}`}>{k}</span>
                 <div className="flex-1 h-1.5 bg-slate-900 rounded-full overflow-hidden">
                   <div className="h-full rounded-full" style={{
                     width: `${pct}%`,
@@ -311,13 +311,13 @@ function ForgeLedger({ ledger }) {
                     opacity: active ? 1 : 0.4,
                   }} />
                 </div>
-                <span className="text-[9px] font-mono text-slate-500 w-16 text-right">{values[i].toLocaleString()}</span>
+                <span className="text-[10px] font-mono text-slate-500 w-16 text-right">{values[i].toLocaleString()}</span>
               </div>
             )
           })}
         </div>
       </div>
-      <div className="mt-2 flex items-center gap-3 text-[9px] text-slate-600 font-mono border-t border-slate-800/40 pt-1.5">
+      <div className="mt-2 flex items-center gap-3 text-[10px] text-slate-600 font-mono border-t border-slate-800/40 pt-1.5">
         <span>CHAIN: {ledger.chain_length} TX</span>
         <span className="truncate">HEAD: {ledger.head_hash}</span>
       </div>

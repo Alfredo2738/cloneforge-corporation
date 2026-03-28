@@ -71,7 +71,7 @@ function ServiceNode({ node, active, compact }) {
       animate={{ opacity: active ? 1 : 0.3, scale: active ? 1 : 0.97 }}
       transition={{ duration: 0.2 }}
       className={`flex flex-col items-center rounded-lg border text-center flex-shrink-0 ${
-        compact ? 'px-2 py-1.5 min-w-[72px]' : 'px-3 py-2 min-w-[90px]'
+        compact ? 'px-2 py-1.5 min-w-[80px]' : 'px-3 py-2 min-w-[90px]'
       } ${node.wide ? 'flex-1' : ''}`}
       style={{
         borderColor: active ? node.color + '80' : '#1e293b',
@@ -79,12 +79,12 @@ function ServiceNode({ node, active, compact }) {
         boxShadow:   active ? `0 0 14px ${node.color}28` : 'none',
       }}
     >
-      <span className={`font-semibold leading-tight ${compact ? 'text-[9px]' : 'text-xs'}`}
+      <span className={`font-semibold leading-tight ${compact ? 'text-[10px]' : 'text-xs'}`}
         style={{ color: active ? node.color : '#334155' }}>
         {node.label}
       </span>
       {s.map((line, i) => (
-        <span key={i} className={`leading-tight mt-0.5 ${compact ? 'text-[7px] text-slate-700' : 'text-[9px] text-slate-600'}`}>
+        <span key={i} className={`leading-tight mt-0.5 ${compact ? 'text-[9px] text-slate-600' : 'text-[10px] text-slate-500'}`}>
           {line}
         </span>
       ))}
@@ -151,7 +151,7 @@ function DiagramContent({ orbState, compact = false }) {
     <div className="flex flex-col">
       {/* State badge */}
       <div className="flex items-center justify-between mb-3">
-        <span className={`font-mono tracking-widest uppercase ${compact ? 'text-[8px] text-slate-600' : 'text-[10px] text-slate-500'}`}>
+        <span className={`font-mono tracking-widest uppercase ${compact ? 'text-[10px] text-slate-500' : 'text-xs text-slate-400'}`}>
           CloneForge Full Stack
         </span>
         <motion.span key={orbState} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
@@ -166,7 +166,7 @@ function DiagramContent({ orbState, compact = false }) {
           {/* Tier label */}
           <div className="flex items-center gap-2 mb-1.5">
             <div className="h-px flex-1" style={{ background: tier.color + '30' }} />
-            <span className={`font-mono tracking-widest ${compact ? 'text-[7px]' : 'text-[9px]'}`}
+            <span className={`font-mono tracking-widest ${compact ? 'text-[9px]' : 'text-[10px]'}`}
               style={{ color: tier.color + 'aa' }}>
               {tier.label} · {tier.region}
             </span>
@@ -182,7 +182,7 @@ function DiagramContent({ orbState, compact = false }) {
             {tier.routes && (
               <div className="flex flex-wrap gap-1 mt-1">
                 {tier.routes.map(r => (
-                  <span key={r} className={`font-mono px-1.5 py-0.5 rounded border ${compact ? 'text-[6px]' : 'text-[8px]'}`}
+                  <span key={r} className={`font-mono px-1.5 py-0.5 rounded border ${compact ? 'text-[8px]' : 'text-[9px]'}`}
                     style={{
                       color: orbState === 'thinking' || orbState === 'speaking' ? '#8b5cf6' : '#334155',
                       borderColor: orbState === 'thinking' || orbState === 'speaking' ? '#8b5cf640' : '#1e293b',
@@ -218,7 +218,7 @@ function DiagramContent({ orbState, compact = false }) {
           { color: '#10b981', label: 'Cerebras' },
           { color: '#f43f5e', label: 'ElevenLabs' },
         ].map(({ color, label }) => (
-          <span key={label} className={`flex items-center gap-1 ${compact ? 'text-[7px]' : 'text-[8px]'} text-slate-600`}>
+          <span key={label} className={`flex items-center gap-1 ${compact ? 'text-[9px]' : 'text-[10px]'} text-slate-500`}>
             <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: color }} />
             {label}
           </span>
@@ -269,7 +269,7 @@ export default function StackFlowDiagram({ orbState = 'idle' }) {
     <>
       <div className="rounded-xl border border-slate-800/40 bg-slate-900/20 px-3 py-3">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-[9px] text-slate-600 tracking-widest uppercase font-mono">Infrastructure Stack</span>
+          <span className="text-[10px] text-slate-500 tracking-widest uppercase font-mono">Infrastructure Stack</span>
           <button onClick={() => setExpanded(true)}
             className="p-1 rounded text-slate-600 hover:text-slate-300 hover:bg-slate-800/60 transition-colors"
             title="Expand diagram">
