@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Activity, Globe, Zap, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Send, X, Network, Volume2, Loader2, Users, Cpu } from 'lucide-react'
+import { Activity, Globe, Zap, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Send, X, Network, Volume2, Loader2, Users, Cpu, Upload, FileText, CheckCircle, AlertCircle } from 'lucide-react'
 import VoiceOrb from '../components/voice/VoiceOrb'
 import AgentPanel from '../components/agents/AgentPanel'
 import BrainDash from '../components/plots/BrainDash'
 import StackFlowDiagram from '../components/plots/StackFlowDiagram'
-import { streamChat, streamPanelChat, ingestUrls, synthesizeVoice, playAudioB64 } from '../api/brain'
+import { streamChat, streamPanelChat, ingestUrls, ingestDocumentSmart, getIngestStatus, synthesizeVoice, playAudioB64 } from '../api/brain'
 
 const ALL_COLLECTIONS = ['cloneforge_docs', 'cloneforge_medical_records', 'cloneforge_web']
 
@@ -75,6 +75,12 @@ export default function BrainInterface() {
   const [speakingIdx, setSpeakingIdx]   = useState(null)
   const [panelMode, setPanelMode]       = useState(false)
   const [autoSpeak, setAutoSpeak]       = useState(false)
+  const [docFile, setDocFile]           = useState(null)
+  const [docProject, setDocProject]     = useState('cloneforge')
+  const [docUploading, setDocUploading] = useState(false)
+  const [docResult, setDocResult]       = useState(null)
+  const [meshStatus, setMeshStatus]     = useState(null)
+  const docInputRef = useRef(null)
   const chatContainerRef = useRef(null)
 
   const handleSpeak = useCallback(async (text, idx) => {
@@ -100,12 +106,16 @@ export default function BrainInterface() {
   }, [])
 
   // ── Standard text send ────────────────────────────────────────────────────
+  const PANEL_TRIGGERS = /\b(spawn|activate|launch|start|use|run|create|bring in|fire up).{0,25}(panel|agents?|subagents?|experts?|team)|panel of experts|multi.?agent|five agents|expert panel/i
+
   const handleSend = async (text) => {
     const userText = text || input.trim()
     if (!userText || isStreaming) return
     setInput('')
 
-    if (panelMode) {
+    // Auto-route panel spawn requests to the real panel endpoint
+    if (panelMode || PANEL_TRIGGERS.test(userText)) {
+      if (!panelMode) setPanelMode(true)
       await handlePanelSend(userText)
       return
     }
@@ -251,6 +261,32 @@ export default function BrainInterface() {
     setIngestStatus(`${result.count || result.indexed || 0} URLs queued`)
     setUrlInput('')
     setTimeout(() => setIngestStatus(''), 4000)
+  }
+
+  // ── Document upload ───────────────────────────────────────────────────────
+  const handleDocUpload = async () => {
+    if (!docFile || docUploading) return
+    setDocUploading(true)
+    setDocResult(null)
+    try {
+      const result = await ingestDocumentSmart(docFile, docProject)
+      setDocResult({ ok: true, ...result })
+      setDocFile(null)
+      if (docInputRef.current) docInputRef.current.value = ''
+      // Refresh mesh status
+      const status = await getIngestStatus()
+      setMeshStatus(status.collections)
+    } catch (e) {
+      setDocResult({ ok: false, error: e.message })
+    } finally {
+      setDocUploading(false)
+      setTimeout(() => setDocResult(null), 6000)
+    }
+  }
+
+  const handleMeshStatus = async () => {
+    const status = await getIngestStatus()
+    setMeshStatus(status.collections)
   }
 
   // ── Speaker styles ────────────────────────────────────────────────────────
@@ -536,7 +572,7 @@ export default function BrainInterface() {
               </SidebarSection>
 
               {/* URL Ingest */}
-              <div className="px-4 py-4">
+              <div className="px-4 py-4 border-b border-slate-800/40">
                 <p className="text-xs font-semibold text-slate-400 tracking-widest flex items-center gap-1.5 mb-3">
                   <Globe size={13} /> INDEX WEB KNOWLEDGE
                 </p>
@@ -544,7 +580,7 @@ export default function BrainInterface() {
                   value={urlInput}
                   onChange={e => setUrlInput(e.target.value)}
                   placeholder="Paste URLs — one per line…"
-                  rows={5}
+                  rows={4}
                   className="w-full bg-slate-800/60 border border-slate-700/50 rounded-xl px-3 py-2.5 text-xs text-slate-300 placeholder:text-slate-600 outline-none focus:border-blue-500/50 resize-none transition-colors leading-relaxed"
                 />
                 <button
@@ -554,6 +590,107 @@ export default function BrainInterface() {
                 >
                   {ingestStatus || 'Ingest into Qdrant Mesh'}
                 </button>
+              </div>
+
+              {/* Document Upload */}
+              <div className="px-4 py-4 border-b border-slate-800/40">
+                <p className="text-xs font-semibold text-slate-400 tracking-widest flex items-center gap-1.5 mb-3">
+                  <Upload size={13} /> FEED THE BRAIN — DOCUMENTS
+                </p>
+                <p className="text-[10px] text-slate-600 mb-3 leading-relaxed">
+                  PDF, TXT, MD, CSV — Oriel4o classifies each document as structured or unstructured, routes it to the right collection, and vectorizes it.
+                </p>
+
+                {/* File drop zone */}
+                <label
+                  className="flex flex-col items-center justify-center gap-2 border border-dashed border-slate-600/60 rounded-xl py-4 px-3 cursor-pointer hover:border-blue-500/50 hover:bg-blue-900/10 transition-colors"
+                >
+                  <input
+                    ref={docInputRef}
+                    type="file"
+                    accept=".pdf,.txt,.md,.csv"
+                    className="hidden"
+                    onChange={e => setDocFile(e.target.files[0] || null)}
+                  />
+                  <FileText size={20} className="text-slate-500" />
+                  {docFile
+                    ? <span className="text-xs text-blue-300 font-medium text-center break-all">{docFile.name}</span>
+                    : <span className="text-xs text-slate-600 text-center">Click to select a file</span>
+                  }
+                </label>
+
+                <div className="mt-2 flex gap-2">
+                  <select
+                    value={docProject}
+                    onChange={e => setDocProject(e.target.value)}
+                    className="flex-1 bg-slate-800/60 border border-slate-700/50 rounded-lg px-2 py-1.5 text-xs text-slate-300 outline-none focus:border-blue-500/50"
+                  >
+                    <option value="cloneforge">cloneforge</option>
+                    <option value="clinical">clinical</option>
+                    <option value="pharma">pharma</option>
+                    <option value="internal">internal</option>
+                    <option value="research">research</option>
+                  </select>
+                  <button
+                    onClick={handleDocUpload}
+                    disabled={!docFile || docUploading}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600/20 border border-blue-500/30 text-blue-300 text-xs font-semibold hover:bg-blue-600/40 disabled:opacity-40 transition-colors"
+                  >
+                    {docUploading ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
+                    {docUploading ? 'Indexing…' : 'Upload'}
+                  </button>
+                </div>
+
+                {/* Result feedback */}
+                <AnimatePresence>
+                  {docResult && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                      className={`mt-2 px-3 py-2 rounded-lg text-xs flex items-start gap-2 ${
+                        docResult.ok
+                          ? 'bg-green-900/20 border border-green-500/30 text-green-300'
+                          : 'bg-red-900/20 border border-red-500/30 text-red-300'
+                      }`}
+                    >
+                      {docResult.ok
+                        ? <CheckCircle size={12} className="flex-shrink-0 mt-0.5" />
+                        : <AlertCircle size={12} className="flex-shrink-0 mt-0.5" />}
+                      <span>
+                        {docResult.ok
+                          ? `${docResult.file} → ${docResult.collection} (${docResult.chunks} chunks, ${docResult.storage})`
+                          : docResult.error || 'Upload failed'}
+                      </span>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {/* Mesh Status */}
+              <div className="px-4 py-4">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-xs font-semibold text-slate-400 tracking-widest flex items-center gap-1.5">
+                    <Activity size={13} /> MESH STATUS
+                  </p>
+                  <button onClick={handleMeshStatus} className="text-[10px] text-slate-600 hover:text-slate-400 transition-colors">
+                    Refresh
+                  </button>
+                </div>
+                {meshStatus ? (
+                  <div className="space-y-2">
+                    {Object.entries(meshStatus).map(([col, info]) => (
+                      <div key={col} className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-500 font-mono truncate">{col.replace('cloneforge_', '')}</span>
+                        <span className={`font-semibold ${info.points > 0 ? 'text-green-400' : 'text-slate-600'}`}>
+                          {info.points?.toLocaleString() ?? 0} pts
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <button onClick={handleMeshStatus} className="w-full py-2 rounded-xl border border-slate-700/50 text-slate-600 text-xs hover:text-slate-400 hover:border-slate-600 transition-colors">
+                    Check collection counts
+                  </button>
+                )}
               </div>
             </motion.div>
           )}
