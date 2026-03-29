@@ -35,7 +35,7 @@ async function resilientFetch(url, opts, { maxAttempts = 4, baseDelay = 800 } = 
 
 // ── Chat ──────────────────────────────────────────────────────────────────────
 
-export async function* streamChat(messages, collections = ['cloneforge_docs', 'cloneforge_medical_records', 'cloneforge_web'], language = 'en') {
+export async function* streamChat(messages, collections = ['cloneforge_docs', 'cloneforge_medical_records', 'cloneforge_web', '001'], language = 'en') {
   const res = await resilientFetch(`${BRAIN_URL}/chat/stream`, {
     method: 'POST',
     headers: headers(),

@@ -11,19 +11,28 @@ const PULSE_VARIANTS = {
 }
 
 // Persona voice switching — matched against transcript before sending to brain
+// Voice switch triggers — checked against the user's transcript before sending to brain.
+// Patterns are intentionally broad to catch natural speech variants.
 const PERSONA_TRIGGERS = [
-  { pattern: /sad russian|grave report|somber|tragic|bad news/i, voiceKey: 'russian_female_sad', label: 'Russian (sad)' },
-  { pattern: /chinese man|chinese male|zh man|mandarin man/i, voiceKey: 'chinese_male', label: 'Chinese (male)' },
-  { pattern: /chinese woman|chinese female|zh woman|mandarin woman/i, voiceKey: 'chinese_female', label: 'Chinese (female)' },
-  { pattern: /spanish woman 2|second spanish woman|es woman 2/i, voiceKey: 'spanish_female_2', label: 'Spanish (female 2)' },
-  { pattern: /spanish woman|spanish female|es woman/i, voiceKey: 'spanish_female', label: 'Spanish (female)' },
-  { pattern: /spanish man 2|second spanish|es man 2/i, voiceKey: 'spanish_male_2', label: 'Spanish (male 2)' },
-  { pattern: /spanish man|spanish male|es man/i, voiceKey: 'spanish_male', label: 'Spanish (male)' },
-  { pattern: /russian man hyperactive|hyperactive russian|energetic russian/i, voiceKey: 'russian_male_hyper', label: 'Russian (hyper)' },
-  { pattern: /russian man|russian male|comrade man|soviet man/i, voiceKey: 'russian_male', label: 'Russian (male)' },
-  { pattern: /russian|comrade|anya|soviet/i, voiceKey: 'russian_female', label: 'Russian' },
-  { pattern: /british|dorothy|english accent/i, voiceKey: 'dorothy', label: 'British' },
-  { pattern: /oriel|default|normal|reset|back to/i, voiceKey: 'oriel', label: 'Oriel' },
+  // Russian female — sad/grave
+  { pattern: /sad russian|grave|somber|tragic|bad news/i, voiceKey: 'russian_female_sad', label: 'Russian (sad)' },
+  // Chinese
+  { pattern: /chinese man|chinese male|mandarin man|zh.{0,5}man/i, voiceKey: 'chinese_male', label: 'Chinese (male)' },
+  { pattern: /chinese (woman|female|lady)|mandarin (woman|female)|zh.{0,5}(woman|female)/i, voiceKey: 'chinese_female', label: 'Chinese (female)' },
+  // Spanish
+  { pattern: /spanish.{0,20}(woman|female|lady|2|two|second)/i, voiceKey: 'spanish_female_2', label: 'Spanish (female 2)' },
+  { pattern: /spanish.{0,20}(woman|female|lady)|habla español/i, voiceKey: 'spanish_female', label: 'Spanish (female)' },
+  { pattern: /spanish.{0,20}(man|male|guy|2|two|second)/i, voiceKey: 'spanish_male_2', label: 'Spanish (male 2)' },
+  { pattern: /spanish.{0,20}(man|male|guy)|en español/i, voiceKey: 'spanish_male', label: 'Spanish (male)' },
+  // Russian male
+  { pattern: /russian.{0,20}(hyper|energetic|fast|excited)/i, voiceKey: 'russian_male_hyper', label: 'Russian (hyper)' },
+  { pattern: /russian.{0,20}(man|male|guy)|soviet man|comrade man/i, voiceKey: 'russian_male', label: 'Russian (male)' },
+  // Russian female — catch-all (must be after more specific russian patterns)
+  { pattern: /russian|comrade|anya|soviet|speak.{0,20}russian|switch.{0,20}russian|use.{0,20}russian/i, voiceKey: 'russian_female', label: 'Russian' },
+  // British
+  { pattern: /british|dorothy|english accent|uk accent/i, voiceKey: 'dorothy', label: 'British' },
+  // Reset
+  { pattern: /oriel|default voice|normal voice|reset voice|back to (normal|default|oriel|english)/i, voiceKey: 'oriel', label: 'Oriel' },
 ]
 
 const LANGUAGES = [
