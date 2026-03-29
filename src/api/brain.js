@@ -169,10 +169,49 @@ export async function playAudioB64(b64) {
       source.start(0)
     })
   } catch (err) {
-    // Fallback to HTML Audio element
     console.warn('AudioContext playback failed, falling back:', err)
     const audio = new Audio(`data:audio/mpeg;base64,${b64}`)
     return audio.play().catch(() => {})
+  }
+}
+
+// Split text into sentence groups of ≤300 chars each, never mid-sentence
+function splitIntoSpeechChunks(text, maxChars = 300) {
+  // Split on sentence-ending punctuation followed by space or end-of-string
+  const raw = text.match(/[^.!?…]+[.!?…]+(\s|$)|[^.!?…]+$/g) || [text]
+  const chunks = []
+  let current = ''
+  for (const sentence of raw) {
+    if (current.length + sentence.length > maxChars && current.length > 0) {
+      chunks.push(current.trim())
+      current = sentence
+    } else {
+      current += sentence
+    }
+  }
+  if (current.trim()) chunks.push(current.trim())
+  return chunks.filter(c => c.length > 0)
+}
+
+// Synthesize and play full response as a pipeline of sentence chunks.
+// Each chunk's audio is pre-fetched while the previous chunk plays —
+// this eliminates gaps and prevents ElevenLabs timeouts on long text.
+export async function synthesizeAndPlayChunked(text, voiceKey = 'oriel', languageCode = null) {
+  const chunks = splitIntoSpeechChunks(text)
+  if (chunks.length === 0) return
+
+  // Pre-fetch first chunk immediately. .catch(() => null) ensures a single
+  // ElevenLabs failure never crashes the entire pipeline — that chunk is
+  // skipped and playback continues with the next one.
+  let nextFetch = synthesizeVoice(chunks[0], voiceKey, languageCode).catch(() => null)
+
+  for (let i = 0; i < chunks.length; i++) {
+    const b64 = await nextFetch
+    // Start pre-fetching next chunk while this one plays
+    if (i + 1 < chunks.length) {
+      nextFetch = synthesizeVoice(chunks[i + 1], voiceKey, languageCode).catch(() => null)
+    }
+    if (b64) await playAudioB64(b64)
   }
 }
 
@@ -208,6 +247,32 @@ export async function ingestUrls(urls, background = true) {
     method: 'POST',
     headers: headers(),
     body: JSON.stringify({ urls, background }),
+  })
+  return res.json()
+}
+
+export async function ingestDocument(file, collection = 'cloneforge_docs', project = 'cloneforge') {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('collection', collection)
+  form.append('project', project)
+  // Note: no Content-Type header — browser sets multipart boundary automatically
+  const res = await fetch(`${BRAIN_URL}/ingest/document`, {
+    method: 'POST',
+    headers: { 'X-Brain-Key': BRAIN_KEY, 'ngrok-skip-browser-warning': 'true' },
+    body: form,
+  })
+  return res.json()
+}
+
+export async function ingestDocumentSmart(file, project = 'cloneforge') {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('project', project)
+  const res = await fetch(`${BRAIN_URL}/ingest/smart`, {
+    method: 'POST',
+    headers: { 'X-Brain-Key': BRAIN_KEY, 'ngrok-skip-browser-warning': 'true' },
+    body: form,
   })
   return res.json()
 }
