@@ -67,6 +67,7 @@ export default function VoiceOrb({
 }) {
   const [orbState, setOrbState]               = useState('idle')
   const [continuous, setContinuous]           = useState(true)
+  const [activated, setActivated]             = useState(false)  // true after first user tap
   const [transcript, setTranscript]           = useState('')
   const [lang, setLang]                       = useState(LANGUAGES[0])
   const [showLangPicker, setShowLangPicker]   = useState(false)
@@ -267,17 +268,17 @@ export default function VoiceOrb({
     }
   }, [buildRecognizer, _setOrbState])
 
-  // Initial build — auto-start listening immediately (continuous mode is on by default)
+  // Initial build — recognizer is built on mount but NOT started.
+  // Chrome requires a user gesture to start SpeechRecognition.
+  // First tap sets activated=true and starts continuous listening.
+  // After that, the orb never requires tapping again.
   useEffect(() => {
     recognitionRef.current = buildRecognizer(LANGUAGES[0])
-    // Small delay so the component is fully mounted before starting
-    const t = setTimeout(() => _startListeningFresh(), 600)
     return () => {
-      clearTimeout(t)
       clearTimeout(silenceTimerRef.current)
       try { recognitionRef.current?.stop() } catch {}
     }
-  }, []) // eslint-disable-line
+  }, [buildRecognizer])
 
   // ── Language switch ───────────────────────────────────────────────────────
   const switchLanguage = useCallback((langObj) => {
@@ -298,6 +299,12 @@ export default function VoiceOrb({
   }, [_startListeningFresh])
 
   const toggleListen = () => {
+    if (!activated) {
+      // First ever tap — activate continuous mode and never require tapping again
+      setActivated(true)
+      _startListeningFresh()
+      return
+    }
     if (orbState === 'listening') {
       clearTimeout(silenceTimerRef.current)
       accTextRef.current = ''
@@ -325,9 +332,11 @@ export default function VoiceOrb({
     : { idle: ['#1e3a5f','#0f2040'], listening: ['#1a5276','#0e3460'], thinking: ['#7d3c98','#4a235a'], speaking: ['#117a65','#0b5345'] }
   const [c1, c2] = stateColors[orbState]
 
-  const stateLabel = activeAgent
-    ? (orbState === 'idle' ? activeAgent.name.toUpperCase() : orbState === 'listening' ? 'LISTENING…' : orbState === 'thinking' ? 'THINKING…' : 'SPEAKING…')
-    : (orbState === 'idle' && !continuous ? 'ORIEL' : orbState === 'idle' ? 'WAITING…' : orbState === 'listening' ? 'LISTENING…' : orbState === 'thinking' ? 'THINKING…' : 'SPEAKING…')
+  const stateLabel = !activated
+    ? 'TAP TO ACTIVATE'
+    : activeAgent
+      ? (orbState === 'idle' ? activeAgent.name.toUpperCase() : orbState === 'listening' ? 'LISTENING…' : orbState === 'thinking' ? 'THINKING…' : 'SPEAKING…')
+      : (orbState === 'idle' ? 'WAITING…' : orbState === 'listening' ? 'LISTENING…' : orbState === 'thinking' ? 'THINKING…' : 'SPEAKING…')
 
   // Language indicator — show selected language when non-English
   const showLangBadge = lang.tts !== 'en'
@@ -382,7 +391,12 @@ export default function VoiceOrb({
               style={{ width:200, height:200 }} />
           </>
         )}
-        {continuous && orbState === 'idle' && (
+        {!activated && (
+          <motion.div className="absolute rounded-full border border-cyan-400/40"
+            animate={{ scale:[1,1.25,1], opacity:[0.5,0.1,0.5] }} transition={{ duration:2, repeat:Infinity }}
+            style={{ width:200, height:200 }} />
+        )}
+        {activated && continuous && orbState === 'idle' && (
           <motion.div className="absolute rounded-full border border-cyan-400/30"
             animate={{ scale:[1,1.2,1], opacity:[0.4,0.1,0.4] }} transition={{ duration:3, repeat:Infinity }}
             style={{ width:200, height:200 }} />
