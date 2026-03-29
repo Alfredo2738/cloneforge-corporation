@@ -176,7 +176,7 @@ export async function playAudioB64(b64) {
 }
 
 // Split text into sentence groups of ≤300 chars each, never mid-sentence
-function splitIntoSpeechChunks(text, maxChars = 300) {
+function splitIntoSpeechChunks(text, maxChars = 550) {
   // Split on sentence-ending punctuation followed by space or end-of-string
   const raw = text.match(/[^.!?…]+[.!?…]+(\s|$)|[^.!?…]+$/g) || [text]
   const chunks = []
