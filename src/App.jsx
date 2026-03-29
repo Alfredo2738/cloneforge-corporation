@@ -33,7 +33,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<GatedBrain />} />
-        <Route path="/clonepharma_sales" element={<ClonePharmaSales />} />
+        <Route path="/clonepharma_sales" element={<ErrorBoundary><ClonePharmaSales /></ErrorBoundary>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
