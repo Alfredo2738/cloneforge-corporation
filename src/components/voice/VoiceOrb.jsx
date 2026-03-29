@@ -155,13 +155,13 @@ export default function VoiceOrb({
       const msg = 'Oriel4o is reconnecting — please try again in a moment.'
       agent ? onAgentResponse?.(agent.id, msg, true) : onResponse?.(msg, true)
       _setOrbState('idle'); setTranscript('')
-      if (continuousRef.current) setTimeout(() => _startListeningFresh(), 2500)
+      if (continuousRef.current) setTimeout(() => _startListeningFreshRef.current?.(), 2500)
       return
     }
 
     if (!fullResponse) {
       _setOrbState('idle'); setTranscript('')
-      if (continuousRef.current) setTimeout(() => _startListeningFresh(), 800)
+      if (continuousRef.current) setTimeout(() => _startListeningFreshRef.current?.(), 800)
       return
     }
 
@@ -175,11 +175,12 @@ export default function VoiceOrb({
     }
 
     _setOrbState('idle'); setTranscript('')
-    if (continuousRef.current) setTimeout(() => _startListeningFresh(), 700)
-  }, [onTranscript, onResponse, onSources, onAgentResponse, collections, _setOrbState, _startListeningFresh]) // eslint-disable-line
+    if (continuousRef.current) setTimeout(() => _startListeningFreshRef.current?.(), 700)
+  }, [onTranscript, onResponse, onSources, onAgentResponse, collections, _setOrbState]) // eslint-disable-line
 
-  const handleFinalRef = useRef(handleFinalTranscript)
-  useEffect(() => { handleFinalRef.current = handleFinalTranscript }, [handleFinalTranscript])
+  const handleFinalRef           = useRef(handleFinalTranscript)
+  const _startListeningFreshRef  = useRef(null)
+  useEffect(() => { handleFinalRef.current          = handleFinalTranscript }, [handleFinalTranscript])
 
   // ── Build a fresh recognizer instance (always new — avoids Chrome dead-instance bugs) ──
   const buildRecognizer = useCallback((langObj) => {
@@ -276,6 +277,8 @@ export default function VoiceOrb({
       console.warn('startListening error:', e)
     }
   }, [buildRecognizer, _setOrbState])
+
+  useEffect(() => { _startListeningFreshRef.current = _startListeningFresh }, [_startListeningFresh])
 
   // Initial build — recognizer is built on mount but NOT started.
   // Chrome requires a user gesture to start SpeechRecognition.
