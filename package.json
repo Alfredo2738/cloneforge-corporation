@@ -9,15 +9,16 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-router-dom": "^6.26.2",
-    "plotly.js": "^2.35.2",
-    "react-plotly.js": "^2.6.0",
+    "clsx": "^2.1.1",
+    "eventsource-parser": "^2.0.1",
+    "face-api.js": "^0.22.2",
     "framer-motion": "^11.11.1",
     "lucide-react": "^0.446.0",
-    "clsx": "^2.1.1",
-    "eventsource-parser": "^2.0.1"
+    "plotly.js": "^2.35.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-plotly.js": "^2.6.0",
+    "react-router-dom": "^6.26.2"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.2",

@@ -366,6 +366,33 @@ export async function seedSimulation() {
   return res.json()
 }
 
+// ── Face recognition — SCIF biometric layer ───────────────────────────────────
+
+export async function enrollFacePrint(principal, descriptor) {
+  // descriptor: Float32Array or number[] of length 128 from face-api.js
+  const res = await fetch(`${BRAIN_URL}/scif/face/enroll`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ principal, descriptor: Array.from(descriptor) }),
+  })
+  return res.json()
+}
+
+export async function verifyFace(principal, descriptor) {
+  // Returns { verified, distance, confidence, threshold }
+  const res = await fetch(`${BRAIN_URL}/scif/face/verify`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ principal, descriptor: Array.from(descriptor) }),
+  })
+  return res.json()
+}
+
+export async function listFacePrincipals() {
+  const res = await fetch(`${BRAIN_URL}/scif/face/principals`, { headers: headers() })
+  return res.json()
+}
+
 export async function ingestToScif(title, content, source = 'scif_direct', tags = []) {
   const res = await fetch(`${BRAIN_URL}/scif/ingest`, {
     method: 'POST',
