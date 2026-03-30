@@ -215,6 +215,22 @@ export async function synthesizeAndPlayChunked(text, voiceKey = 'oriel', languag
   }
 }
 
+// ── Simulation / Persona layer ────────────────────────────────────────────────
+
+export async function spawnSimulation(personas = [], customPersonas = [], sceneOverride = '') {
+  const res = await fetch(`${BRAIN_URL}/agents/simulation/spawn`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ personas, custom_personas: customPersonas, scene_override: sceneOverride }),
+  })
+  return res.json()
+}
+
+export async function getSimulationPresets() {
+  const res = await fetch(`${BRAIN_URL}/agents/simulation/presets`, { headers: headers() })
+  return res.json()
+}
+
 // ── Panel of experts ──────────────────────────────────────────────────────────
 
 export async function* streamPanelChat(question, collections = ['cloneforge_docs', 'cloneforge_medical_records', 'cloneforge_web'], language = 'en') {
@@ -286,6 +302,76 @@ export async function getIngestStatus() {
 
 export async function getBrainStatus() {
   const res = await fetch(`${BRAIN_URL}/status`)
+  return res.json()
+}
+
+// ── SCIF — Founders only (Alfred Pinkerton & Diana Safina) ────────────────────
+
+export async function getScifPresence() {
+  const res = await fetch(`${BRAIN_URL}/scif/presence`, { headers: headers() })
+  return res.json()
+}
+
+export async function updateScifPresence(principal, status = 'online') {
+  const res = await fetch(`${BRAIN_URL}/scif/presence`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ principal, status }),
+  })
+  return res.json()
+}
+
+export async function getScifGreeting(principals = []) {
+  const res = await fetch(`${BRAIN_URL}/scif/greet`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ principals }),
+  })
+  return res.json()
+}
+
+// Clone Alfred or Diana's voice on ElevenLabs (SCIF — requires brain key)
+export async function cloneFounderVoice(principal, audio_b64, name = '') {
+  const res = await fetch(`${BRAIN_URL}/voice/clone`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ principal, audio_b64, name }),
+  })
+  return res.json()
+}
+
+export async function enrollVoicePrint(principal, audio_b64) {
+  const res = await fetch(`${BRAIN_URL}/scif/voice/enroll`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ principal, audio_b64 }),
+  })
+  return res.json()
+}
+
+export async function ingestToSimulation(title, content, scene = 'white_rabbit', doc_type = 'general') {
+  const res = await fetch(`${BRAIN_URL}/ingest/simulation`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ title, content, scene, doc_type }),
+  })
+  return res.json()
+}
+
+export async function seedSimulation() {
+  const res = await fetch(`${BRAIN_URL}/ingest/simulation/seed`, {
+    method: 'POST',
+    headers: headers(),
+  })
+  return res.json()
+}
+
+export async function ingestToScif(title, content, source = 'scif_direct', tags = []) {
+  const res = await fetch(`${BRAIN_URL}/scif/ingest`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ title, content, source, tags }),
+  })
   return res.json()
 }
 

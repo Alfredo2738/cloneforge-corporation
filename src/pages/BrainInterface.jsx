@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Activity, Globe, Zap, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Send, X, Network, Volume2, Loader2, Users, Cpu, Upload, FileText, CheckCircle, AlertCircle } from 'lucide-react'
+import { Activity, Globe, Zap, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Send, X, Network, Volume2, Loader2, Users, Cpu, Upload, FileText, CheckCircle, AlertCircle, Film } from 'lucide-react'
 import VoiceOrb from '../components/voice/VoiceOrb'
 import AgentPanel from '../components/agents/AgentPanel'
 import BrainDash from '../components/plots/BrainDash'
 import StackFlowDiagram from '../components/plots/StackFlowDiagram'
-import { streamChat, streamPanelChat, ingestUrls, ingestDocumentSmart, getIngestStatus, synthesizeVoice, playAudioB64 } from '../api/brain'
+import { streamChat, streamPanelChat, streamAgentMessage, spawnSimulation, ingestUrls, ingestDocumentSmart, getIngestStatus, synthesizeAndPlayChunked, synthesizeVoice, playAudioB64, getScifPresence, updateScifPresence, getScifGreeting } from '../api/brain'
 
 const ALL_COLLECTIONS = ['cloneforge_docs', 'cloneforge_medical_records', 'cloneforge_web']
 
@@ -16,6 +16,41 @@ const MESH_SEED_URLS = [
 ]
 
 const WELCOME = `I am Oriel4o — the master intelligence of CloneForge Corporation. I operate across your entire knowledge mesh: clinical documentation, research literature, indexed web intelligence, and live agent networks. Speak or type. I'm listening.`
+
+// Founder identities — used for presence + comrade greeting
+const FOUNDERS = {
+  alfred: { label: 'Alfred Pinkerton', role: 'CEO' },
+  diana:  { label: 'Diana Safina',    role: 'Co-CEO' },
+}
+
+// ── Simulation persona config ─────────────────────────────────────────────────
+const PERSONA_VOICE_KEYS = {
+  // Founder clones
+  alfred_pinkerton: 'oriel',           // Alfred — Oriel4o voice (English)
+  diana_safina:     'russian_female',  // Diana — Russian female (Kazakh heritage)
+  // White Rabbit Moscow
+  white_rabbit_sommelier: 'russian_male',       // Viktor — measured baritone
+  white_rabbit_chef:      'russian_male_hyper', // Chef Dmitri — intense
+  white_rabbit_maitre_d:  'russian_female',     // Irina — polished
+}
+
+const PERSONA_NAMES = {
+  alfred_pinkerton:       'Alfred',
+  diana_safina:           'Diana',
+  white_rabbit_sommelier: 'Viktor',
+  white_rabbit_chef:      'Chef Dmitri',
+  white_rabbit_maitre_d:  'Irina',
+}
+
+const PERSONA_COLORS = {
+  // Founder clones — violet/indigo (SCIF tier)
+  alfred_pinkerton: 'bg-indigo-900/30 border-indigo-600/40 text-indigo-100',
+  diana_safina:     'bg-violet-900/30 border-violet-600/40 text-violet-100',
+  // White Rabbit Moscow
+  white_rabbit_sommelier: 'bg-amber-900/30 border-amber-600/40 text-amber-100',
+  white_rabbit_chef:      'bg-orange-900/30 border-orange-600/40 text-orange-100',
+  white_rabbit_maitre_d:  'bg-rose-900/30 border-rose-600/40 text-rose-100',
+}
 
 function parseTranslation(content) {
   const marker = '〔EN〕'
@@ -75,6 +110,12 @@ export default function BrainInterface() {
   const [speakingIdx, setSpeakingIdx]   = useState(null)
   const [panelMode, setPanelMode]       = useState(false)
   const [autoSpeak, setAutoSpeak]       = useState(false)
+  const [simulationMode, setSimulationMode]       = useState(false)
+  const [simulationPersonas, setSimulationPersonas] = useState({}) // { preset_key: { agent_id, name } }
+  const [activeSimPersona, setActiveSimPersona]   = useState(null) // currently speaking persona key
+  // Founder presence — who is at the interface right now
+  const [founderPresence, setFounderPresence]     = useState({ alfred: false, diana: false })
+  const [scifGreeting, setScifGreeting]           = useState(null)
   const [docFile, setDocFile]           = useState(null)
   const [docProject, setDocProject]     = useState('cloneforge')
   const [docUploading, setDocUploading] = useState(false)
@@ -83,12 +124,12 @@ export default function BrainInterface() {
   const docInputRef = useRef(null)
   const chatContainerRef = useRef(null)
 
-  const handleSpeak = useCallback(async (text, idx) => {
+  // voiceKey defaults to 'oriel' for normal chat; persona keys used in simulation
+  const handleSpeak = useCallback(async (text, idx, voiceKey = 'oriel') => {
     if (speakingIdx !== null) return
     setSpeakingIdx(idx)
     try {
-      const b64 = await synthesizeVoice(text, 'oriel')
-      await playAudioB64(b64)
+      await synthesizeAndPlayChunked(text, voiceKey)
     } catch (e) {
       console.warn('TTS failed:', e)
     } finally {
@@ -105,13 +146,63 @@ export default function BrainInterface() {
     ingestUrls(MESH_SEED_URLS, true).catch(() => {})
   }, [])
 
-  // ── Standard text send ────────────────────────────────────────────────────
+  // Fetch SCIF presence state on mount and every 30s
+  useEffect(() => {
+    const fetchPresence = async () => {
+      try {
+        const data = await getScifPresence()
+        const online = new Set(data.founders_online || [])
+        setFounderPresence({ alfred: online.has('alfred'), diana: online.has('diana') })
+        if (data.greeting && (online.has('alfred') || online.has('diana'))) {
+          setScifGreeting(data.greeting)
+        }
+      } catch {}
+    }
+    fetchPresence()
+    const interval = setInterval(fetchPresence, 30_000)
+    return () => clearInterval(interval)
+  }, [])
+
+  const handlePresenceToggle = async (principal) => {
+    const current = founderPresence[principal]
+    const newStatus = current ? 'offline' : 'online'
+    try {
+      const data = await updateScifPresence(principal, newStatus)
+      const online = new Set(data.founders_online || [])
+      setFounderPresence({ alfred: online.has('alfred'), diana: online.has('diana') })
+      setScifGreeting(data.greeting)
+    } catch {}
+  }
+
+  // ── Trigger patterns ──────────────────────────────────────────────────────
   const PANEL_TRIGGERS = /\b(spawn|activate|launch|start|use|run|create|bring in|fire up).{0,25}(panel|agents?|subagents?|experts?|team)|panel of experts|multi.?agent|five agents|expert panel/i
+
+  const SIMULATION_TRIGGERS = /\b(run|start|launch|begin|enter|activate|open).{0,20}(simulation|sim|scene|scenario|persona|roleplay|role.?play)|white rabbit|viktor|chef.?dmitri|irina|simulation (mode|layer)|bar scene|restaurant scene|\bspeak to (alfred|diana)\b|\bsimulate (alfred|diana)\b/i
+
+  const EXIT_SIMULATION_TRIGGERS = /\b(exit|end|stop|leave|quit|close).{0,20}(simulation|sim|scene|roleplay)|back to (oriel|normal|chat|brain)/i
 
   const handleSend = async (text) => {
     const userText = text || input.trim()
     if (!userText || isStreaming) return
     setInput('')
+
+    // Exit simulation
+    if (simulationMode && EXIT_SIMULATION_TRIGGERS.test(userText)) {
+      setSimulationMode(false)
+      setDisplayMessages(prev => [
+        ...prev,
+        { role: 'user', content: userText },
+        { role: 'sim_system', content: 'Simulation ended. Returning to Oriel4o.' },
+      ])
+      return
+    }
+
+    // Simulation routing — takes priority over panel
+    if (simulationMode || SIMULATION_TRIGGERS.test(userText)) {
+      if (!simulationMode) setSimulationMode(true)
+      await handleSimulationSend(userText)
+      return
+    }
 
     // Auto-route panel spawn requests to the real panel endpoint
     if (panelMode || PANEL_TRIGGERS.test(userText)) {
@@ -144,10 +235,97 @@ export default function BrainInterface() {
         setIsStreaming(false)
         if (autoSpeak && assistantMsg.content) {
           const msgIdx = conversation.length + 2
-          handleSpeak(assistantMsg.content, msgIdx)
+          handleSpeak(assistantMsg.content, msgIdx, 'oriel')
         }
       }
     }
+  }
+
+  // ── Simulation layer ──────────────────────────────────────────────────────
+  const handleSimulationSend = async (userText) => {
+    // Spawn personas on first message if not yet active
+    let personas = simulationPersonas
+    if (!Object.keys(personas).length) {
+      setDisplayMessages(prev => [
+        ...prev,
+        { role: 'user', content: userText },
+        { role: 'sim_system', content: 'Entering White Rabbit simulation — spawning personas…' },
+      ])
+      setIsStreaming(true)
+      try {
+        const result = await spawnSimulation(
+          ['white_rabbit_sommelier', 'white_rabbit_chef', 'white_rabbit_maitre_d', 'alfred_pinkerton', 'diana_safina']
+        )
+        personas = {}
+        for (const [key, data] of Object.entries(result.personas || {})) {
+          personas[key] = { agent_id: data.agent_id, name: data.name }
+        }
+        setSimulationPersonas(personas)
+        setActiveSimPersona('white_rabbit_maitre_d') // Irina greets first
+        setDisplayMessages(prev => [
+          ...prev.slice(0, -1),
+          {
+            role: 'sim_system',
+            content: `White Rabbit Moscow — 16th floor, Smolensky Passage. Evening service is underway. Personas: ${Object.values(personas).map(p => p.name).join(', ')}. Address them by name or they'll be routed by context.`,
+          },
+        ])
+      } catch (e) {
+        setDisplayMessages(prev => [
+          ...prev.slice(0, -1),
+          { role: 'assistant', content: 'Simulation spawn failed — check brain connection.', sources: [], speaker: 'ORIEL4O' },
+        ])
+        setIsStreaming(false)
+        setSimulationMode(false)
+        return
+      }
+    } else {
+      // Normal message — push user bubble first
+      setDisplayMessages(prev => [...prev, { role: 'user', content: userText }])
+      setIsStreaming(true)
+    }
+
+    // Route to persona based on name/context in the message
+    let targetKey = activeSimPersona || 'white_rabbit_maitre_d'
+    const lc = userText.toLowerCase()
+    // Founder personas
+    if (/\b(alfred|pinkerton|ceo)\b/.test(lc)) targetKey = 'alfred_pinkerton'
+    else if (/\b(diana|safina|co-?ceo)\b/.test(lc)) targetKey = 'diana_safina'
+    // White Rabbit personas
+    else if (/\b(viktor|sommelier|wine|champagne|bottle)\b/.test(lc)) targetKey = 'white_rabbit_sommelier'
+    else if (/\b(dmitri|chef|kitchen|cook|dish|menu|food|eat|tasting)\b/.test(lc)) targetKey = 'white_rabbit_chef'
+    else if (/\b(irina|maitre|ma[iî]tre|table|seat|reservation|host)\b/.test(lc)) targetKey = 'white_rabbit_maitre_d'
+
+    const persona = personas[targetKey]
+    if (!persona) { setIsStreaming(false); return }
+    setActiveSimPersona(targetKey)
+
+    const voiceKey = PERSONA_VOICE_KEYS[targetKey] || 'oriel'
+
+    setDisplayMessages(prev => [
+      ...prev,
+      { role: 'sim', content: '', speaker: persona.name.toUpperCase(), agentId: persona.agent_id, personaKey: targetKey, streaming: true },
+    ])
+
+    let simMsg = { role: 'sim', content: '', speaker: persona.name.toUpperCase(), agentId: persona.agent_id, personaKey: targetKey }
+
+    for await (const event of streamAgentMessage(
+      persona.agent_id,
+      userText,
+      ['white_rabbit_sim'],  // dedicated simulation sandbox — no medical/regulatory RAG pollution
+    )) {
+      if (event.type === 'token') {
+        simMsg = { ...simMsg, content: simMsg.content + event.data }
+        setDisplayMessages(prev => [...prev.slice(0, -1), { ...simMsg, streaming: true }])
+      } else if (event.type === 'done') {
+        setDisplayMessages(prev => [...prev.slice(0, -1), { ...simMsg, streaming: false }])
+        setIsStreaming(false)
+        if (autoSpeak && simMsg.content) {
+          const msgIdx = Date.now()
+          handleSpeak(simMsg.content, msgIdx, voiceKey)
+        }
+      }
+    }
+    setIsStreaming(false)
   }
 
   // ── Panel of experts send ─────────────────────────────────────────────────
@@ -273,7 +451,6 @@ export default function BrainInterface() {
       setDocResult({ ok: true, ...result })
       setDocFile(null)
       if (docInputRef.current) docInputRef.current.value = ''
-      // Refresh mesh status
       const status = await getIngestStatus()
       setMeshStatus(status.collections)
     } catch (e) {
@@ -292,6 +469,11 @@ export default function BrainInterface() {
   // ── Speaker styles ────────────────────────────────────────────────────────
   const speakerStyle = (msg) => {
     if (msg.role === 'user') return 'bg-blue-600/30 border border-blue-500/20 text-blue-100'
+    if (msg.role === 'sim') {
+      const col = PERSONA_COLORS[msg.personaKey] || 'bg-amber-900/30 border-amber-600/40 text-amber-100'
+      return `border ${col}`
+    }
+    if (msg.role === 'sim_system') return 'border border-slate-700/40 bg-slate-900/40 text-slate-500 italic text-xs'
     if (msg.agentId) {
       const t = msg.agentType || ''
       if (t === 'rogue')      return 'bg-red-900/30 border border-red-500/20 text-red-100'
@@ -300,6 +482,17 @@ export default function BrainInterface() {
     }
     return 'bg-slate-800/60 border border-slate-700/40 text-slate-200'
   }
+
+  // ── Input placeholder ─────────────────────────────────────────────────────
+  const inputPlaceholder = simulationMode
+    ? activeSimPersona && Object.keys(simulationPersonas).length
+      ? `Speaking to ${PERSONA_NAMES[activeSimPersona] || 'persona'} — address Viktor, Chef Dmitri, or Irina by name…`
+      : 'Say "run simulation" or address Viktor, Chef Dmitri, or Irina…'
+    : panelMode
+      ? 'Panel mode — experts will converge on a response…'
+      : activeAgent
+        ? `Type to ${activeAgent.name}…`
+        : 'Type to Oriel4o…'
 
   return (
     <div className="h-screen bg-[#050c18] text-slate-200 flex flex-col overflow-hidden">
@@ -325,7 +518,16 @@ export default function BrainInterface() {
               Pharma Sales
             </a>
           </div>
-          {activeAgent && (
+          {simulationMode && (
+            <motion.div initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }}
+              className="flex items-center gap-2 px-3 py-1 rounded-full border border-amber-500/40 bg-amber-900/20 text-xs text-amber-400">
+              <Film size={11} className="animate-pulse" />
+              White Rabbit
+              {activeSimPersona && <span className="opacity-70">— {PERSONA_NAMES[activeSimPersona]}</span>}
+              <button onClick={() => setSimulationMode(false)} className="ml-1 hover:text-amber-200"><X size={11} /></button>
+            </motion.div>
+          )}
+          {!simulationMode && activeAgent && (
             <motion.div initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }}
               className="flex items-center gap-2 px-3 py-1 rounded-full border border-emerald-500/30 bg-emerald-900/20 text-xs text-emerald-400">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -333,6 +535,24 @@ export default function BrainInterface() {
               <button onClick={() => setActiveAgent(null)} className="ml-1 hover:text-emerald-200"><X size={11} /></button>
             </motion.div>
           )}
+          {/* Founder presence toggles */}
+          <div className="hidden sm:flex items-center gap-1.5">
+            {Object.entries(FOUNDERS).map(([key, f]) => (
+              <button
+                key={key}
+                onClick={() => handlePresenceToggle(key)}
+                title={`Toggle ${f.label} presence`}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[10px] font-semibold transition-colors ${
+                  founderPresence[key]
+                    ? 'border-violet-500/50 bg-violet-900/20 text-violet-300'
+                    : 'border-slate-700/50 bg-transparent text-slate-600 hover:text-slate-400'
+                }`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${founderPresence[key] ? 'bg-violet-400 animate-pulse' : 'bg-slate-600'}`} />
+                {key === 'alfred' ? 'Alfred' : 'Diana'}
+              </button>
+            ))}
+          </div>
           <div className="flex items-center gap-2 text-xs text-green-400">
             <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
             BRAIN ONLINE
@@ -343,6 +563,21 @@ export default function BrainInterface() {
       <div className="flex flex-1 overflow-hidden">
         {/* Left: Voice + Chat */}
         <div className="flex flex-col flex-1 min-w-0">
+          {/* SCIF greeting banner */}
+          <AnimatePresence>
+            {scifGreeting && (
+              <motion.div
+                initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                className="px-6 py-2 border-b border-violet-900/30 bg-violet-950/20 flex items-center justify-between"
+              >
+                <p className="text-[11px] text-violet-400 font-medium tracking-wide">{scifGreeting}</p>
+                <button onClick={() => setScifGreeting(null)} className="text-violet-600 hover:text-violet-400 ml-4">
+                  <X size={11} />
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           <div className="flex justify-center py-6 border-b border-slate-800/40 flex-shrink-0">
             <VoiceOrb
               onTranscript={handleVoiceTranscript}
@@ -370,10 +605,48 @@ export default function BrainInterface() {
               {displayMessages.map((msg, i) => (
                 <motion.div key={msg.id || i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
                   className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  {/* ── Panel message ── */}
-                  {msg.role === 'panel' ? (
+
+                  {/* ── Simulation system notice ── */}
+                  {msg.role === 'sim_system' ? (
+                    <div className="w-full max-w-[90%]">
+                      <div className="flex items-center gap-2 px-4 py-2 rounded-xl border border-amber-800/30 bg-amber-900/10">
+                        <Film size={10} className="text-amber-600 flex-shrink-0" />
+                        <p className="text-[11px] text-amber-700/90 italic">{msg.content}</p>
+                      </div>
+                    </div>
+
+                  /* ── Simulation persona message ── */
+                  ) : msg.role === 'sim' ? (
+                    <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${speakerStyle(msg)}`}>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <p className="text-xs font-semibold tracking-widest opacity-70 flex items-center gap-1.5">
+                          <Film size={9} />
+                          {msg.speaker || 'PERSONA'}
+                        </p>
+                        {msg.content && !msg.streaming && (
+                          <button
+                            onClick={() => handleSpeak(msg.content, i, PERSONA_VOICE_KEYS[msg.personaKey] || 'oriel')}
+                            disabled={speakingIdx !== null}
+                            title="Speak with persona voice"
+                            className="ml-3 p-1 rounded-md opacity-40 hover:opacity-100 transition-opacity disabled:cursor-wait"
+                          >
+                            {speakingIdx === i
+                              ? <Loader2 size={12} className="animate-spin" />
+                              : <Volume2 size={12} />}
+                          </button>
+                        )}
+                      </div>
+                      <p className="whitespace-pre-wrap">
+                        {msg.content}
+                        {msg.streaming && (
+                          <span className="inline-block w-1 h-4 bg-current ml-0.5 animate-pulse opacity-70" />
+                        )}
+                      </p>
+                    </div>
+
+                  /* ── Panel message ── */
+                  ) : msg.role === 'panel' ? (
                     <div className="w-full max-w-[95%]">
-                      {/* Agent cards */}
                       {msg.agents?.length > 0 && (
                         <div className="mb-3">
                           <p className="text-[10px] text-slate-500 font-mono uppercase tracking-widest mb-2 flex items-center gap-1.5">
@@ -400,7 +673,6 @@ export default function BrainInterface() {
                           </div>
                         </div>
                       )}
-                      {/* Synthesis */}
                       {(msg.synthesising || msg.synthesis) && (
                         <div className="rounded-xl border border-blue-500/30 bg-blue-900/10 px-4 py-3">
                           <p className="text-[10px] font-semibold text-blue-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
@@ -421,61 +693,63 @@ export default function BrainInterface() {
                         </div>
                       )}
                     </div>
+
+                  /* ── Normal assistant / user ── */
                   ) : (
-                  <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${speakerStyle(msg)}`}>
-                    {msg.role === 'assistant' && (
-                      <div className="flex items-center justify-between mb-1.5">
-                        <p className="text-xs font-medium tracking-widest opacity-60">
-                          {msg.speaker || 'ORIEL4O'}
-                        </p>
-                        {msg.content && !isStreaming && (
-                          <button
-                            onClick={() => handleSpeak(msg.content, i)}
-                            disabled={speakingIdx !== null}
-                            title="Speak this response"
-                            className="ml-3 p-1 rounded-md opacity-40 hover:opacity-100 transition-opacity disabled:cursor-wait"
-                          >
-                            {speakingIdx === i
-                              ? <Loader2 size={12} className="animate-spin" />
-                              : <Volume2 size={12} />}
-                          </button>
-                        )}
-                      </div>
-                    )}
-                    {msg.role === 'assistant' ? (() => {
-                      const { main, translation } = parseTranslation(msg.content)
-                      return (
-                        <>
-                          <p className="whitespace-pre-wrap">{main}
-                            {isStreaming && i === displayMessages.length - 1 && (
-                              <span className="inline-block w-1 h-4 bg-current ml-0.5 animate-pulse opacity-70" />
-                            )}
+                    <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${speakerStyle(msg)}`}>
+                      {msg.role === 'assistant' && (
+                        <div className="flex items-center justify-between mb-1.5">
+                          <p className="text-xs font-medium tracking-widest opacity-60">
+                            {msg.speaker || 'ORIEL4O'}
                           </p>
-                          {translation && (
-                            <div className="mt-2 pt-2 border-t border-white/10">
-                              <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">EN Translation</p>
-                              <p className="text-xs text-slate-400 italic whitespace-pre-wrap">{translation}</p>
-                            </div>
+                          {msg.content && !isStreaming && (
+                            <button
+                              onClick={() => handleSpeak(msg.content, i)}
+                              disabled={speakingIdx !== null}
+                              title="Speak this response"
+                              className="ml-3 p-1 rounded-md opacity-40 hover:opacity-100 transition-opacity disabled:cursor-wait"
+                            >
+                              {speakingIdx === i
+                                ? <Loader2 size={12} className="animate-spin" />
+                                : <Volume2 size={12} />}
+                            </button>
                           )}
-                        </>
-                      )
-                    })() : (
-                      <p className="whitespace-pre-wrap">{msg.content}
-                        {isStreaming && i === displayMessages.length - 1 && msg.role === 'assistant' && (
-                          <span className="inline-block w-1 h-4 bg-current ml-0.5 animate-pulse opacity-70" />
-                        )}
-                      </p>
-                    )}
-                    {msg.sources?.length > 0 && (
-                      <div className="mt-2 pt-2 border-t border-current/10 flex flex-wrap gap-1">
-                        {msg.sources.slice(0, 4).map((s, si) => (
-                          <span key={si} className="text-xs bg-black/20 rounded-md px-2 py-0.5 opacity-70">
-                            {s.project ? `${s.project}/` : ''}{s.source?.split('/').pop() || s.source}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                        </div>
+                      )}
+                      {msg.role === 'assistant' ? (() => {
+                        const { main, translation } = parseTranslation(msg.content)
+                        return (
+                          <>
+                            <p className="whitespace-pre-wrap">{main}
+                              {isStreaming && i === displayMessages.length - 1 && (
+                                <span className="inline-block w-1 h-4 bg-current ml-0.5 animate-pulse opacity-70" />
+                              )}
+                            </p>
+                            {translation && (
+                              <div className="mt-2 pt-2 border-t border-white/10">
+                                <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">EN Translation</p>
+                                <p className="text-xs text-slate-400 italic whitespace-pre-wrap">{translation}</p>
+                              </div>
+                            )}
+                          </>
+                        )
+                      })() : (
+                        <p className="whitespace-pre-wrap">{msg.content}
+                          {isStreaming && i === displayMessages.length - 1 && msg.role === 'assistant' && (
+                            <span className="inline-block w-1 h-4 bg-current ml-0.5 animate-pulse opacity-70" />
+                          )}
+                        </p>
+                      )}
+                      {msg.sources?.length > 0 && (
+                        <div className="mt-2 pt-2 border-t border-current/10 flex flex-wrap gap-1">
+                          {msg.sources.slice(0, 4).map((s, si) => (
+                            <span key={si} className="text-xs bg-black/20 rounded-md px-2 py-0.5 opacity-70">
+                              {s.project ? `${s.project}/` : ''}{s.source?.split('/').pop() || s.source}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </motion.div>
               ))}
@@ -488,11 +762,19 @@ export default function BrainInterface() {
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
-                placeholder={panelMode ? 'Panel mode — experts will converge on a response…' : activeAgent ? `Type to ${activeAgent.name}…` : 'Type to Oriel4o…'}
-                className="flex-1 bg-slate-800/60 border border-slate-700/50 rounded-xl px-4 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-blue-500/50 transition-colors"
+                placeholder={inputPlaceholder}
+                className={`flex-1 bg-slate-800/60 border rounded-xl px-4 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 outline-none transition-colors ${
+                  simulationMode
+                    ? 'border-amber-700/40 focus:border-amber-500/50'
+                    : 'border-slate-700/50 focus:border-blue-500/50'
+                }`}
               />
               <button onClick={() => handleSend()} disabled={isStreaming || !input.trim()}
-                className="p-2.5 rounded-xl bg-blue-600/20 border border-blue-500/30 text-blue-300 hover:bg-blue-600/40 disabled:opacity-40 transition-colors">
+                className={`p-2.5 rounded-xl border disabled:opacity-40 transition-colors ${
+                  simulationMode
+                    ? 'bg-amber-700/20 border-amber-600/30 text-amber-300 hover:bg-amber-700/40'
+                    : 'bg-blue-600/20 border-blue-500/30 text-blue-300 hover:bg-blue-600/40'
+                }`}>
                 <Send size={16} />
               </button>
             </div>
@@ -520,6 +802,22 @@ export default function BrainInterface() {
               >
                 <Volume2 size={11} />
                 {autoSpeak ? 'Auto-speak ON' : 'Auto-speak'}
+              </button>
+              <button
+                onClick={() => {
+                  const next = !simulationMode
+                  setSimulationMode(next)
+                  if (!next) setActiveSimPersona(null)
+                }}
+                title="Simulation mode — White Rabbit Moscow persona layer"
+                className={`flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-lg border transition-colors ${
+                  simulationMode
+                    ? 'border-amber-500/50 bg-amber-900/20 text-amber-400'
+                    : 'border-slate-700/50 bg-transparent text-slate-600 hover:text-slate-400'
+                }`}
+              >
+                <Film size={11} />
+                {simulationMode ? 'Sim ON' : 'Simulation'}
               </button>
             </div>
           </div>
@@ -601,7 +899,6 @@ export default function BrainInterface() {
                   PDF, TXT, MD, CSV — Oriel4o classifies each document as structured or unstructured, routes it to the right collection, and vectorizes it.
                 </p>
 
-                {/* File drop zone */}
                 <label
                   className="flex flex-col items-center justify-center gap-2 border border-dashed border-slate-600/60 rounded-xl py-4 px-3 cursor-pointer hover:border-blue-500/50 hover:bg-blue-900/10 transition-colors"
                 >
@@ -641,7 +938,6 @@ export default function BrainInterface() {
                   </button>
                 </div>
 
-                {/* Result feedback */}
                 <AnimatePresence>
                   {docResult && (
                     <motion.div
